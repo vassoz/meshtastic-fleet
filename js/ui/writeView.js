@@ -47,18 +47,18 @@ export function render(state) {
   const localProfile = state.ui.writeLocalId ? state.store.localProfiles[state.ui.writeLocalId] : null;
   return `<section class="view write-view">
     <h2>Write</h2>
+    ${renderDangerZone(state)}
     ${picker}
     ${renderGlobalProfileSummary(globalProfile)}
     ${plan ? renderPlan(plan, globalProfile, localProfile) : ""}
     ${state.ui.writeLog.length ? `<div class="write-log"><h3>Log</h3>${state.ui.writeLog.map((l) => `<div>${escapeHtml(l)}</div>`).join("")}</div>` : ""}
     ${state.ui.writeVerify ? renderVerify(state.ui.writeVerify) : ""}
-    ${renderDangerZone(state)}
   </section>`;
 }
 
 function renderDangerZone(state) {
   const name = state.connection?.bleDevice?.name ?? "this device";
-  return `<div class="row-actions danger-zone">
+  return `<div class="row-actions danger-zone danger-zone-top">
     <button type="button" class="danger" data-action="factory-reset">Factory reset ${escapeHtml(name)}…</button>
   </div>`;
 }

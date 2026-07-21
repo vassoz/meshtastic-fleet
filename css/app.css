@@ -112,6 +112,7 @@ input[type="checkbox"] { width: 16px; height: 16px; }
 
 .row-actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin: 0.75rem 0; }
 .danger-zone { margin-top: 2rem; padding-top: 1rem; border-top: 1px dashed var(--border); }
+.danger-zone-top { margin-top: 0; padding-top: 0; border-top: none; margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px dashed var(--border); }
 
 fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem 1rem 1rem; margin: 1rem 0; }
 legend { padding: 0 0.4rem; font-weight: 600; }
