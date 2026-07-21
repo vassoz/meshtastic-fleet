@@ -52,7 +52,15 @@ export function render(state) {
     ${plan ? renderPlan(plan, globalProfile, localProfile) : ""}
     ${state.ui.writeLog.length ? `<div class="write-log"><h3>Log</h3>${state.ui.writeLog.map((l) => `<div>${escapeHtml(l)}</div>`).join("")}</div>` : ""}
     ${state.ui.writeVerify ? renderVerify(state.ui.writeVerify) : ""}
+    ${renderDangerZone(state)}
   </section>`;
+}
+
+function renderDangerZone(state) {
+  const name = state.connection?.bleDevice?.name ?? "this device";
+  return `<div class="row-actions danger-zone">
+    <button type="button" class="danger" data-action="factory-reset">Factory reset ${escapeHtml(name)}…</button>
+  </div>`;
 }
 
 // There's no dedicated Global profile editor -- a profile is built purely
@@ -182,6 +190,18 @@ export function onAction(state, action, target) {
       if (state.ui.writeGlobalId === id) state.ui.writeGlobalId = null;
       state.ui.writePlan = null;
       return true;
+    }
+    case "factory-reset": {
+      const name = state.connection?.bleDevice?.name ?? "this device";
+      const confirmed = confirm(
+        `Factory reset ${name}?\n\n` +
+        "This erases ALL configuration, channels, PKI keys, and node data, and cannot be undone -- the device " +
+        "reboots as if freshly flashed. If you haven't already, capture its current private key via Read -> " +
+        "Local identity before doing this, or it's gone.\n\n" +
+        "Continue?",
+      );
+      if (!confirmed) return true;
+      return { asyncAction: "factory-reset" };
     }
     default:
       return false;

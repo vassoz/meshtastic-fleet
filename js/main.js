@@ -225,9 +225,24 @@ function onSnapshotProgress(label) {
 // can therefore throw "GATT Server is disconnected..." even though the
 // device is right there and otherwise fine. Retrying with a fresh GATT
 // connection (same already-selected BluetoothDevice, no new picker
-// prompt) a few times papers over that instead of surfacing a dead end.
-const CONFIGURE_MAX_ATTEMPTS = 4;
-const CONFIGURE_RETRY_DELAY_MS = 1500;
+// prompt) papers over that instead of surfacing a dead end.
+//
+// The very first-ever connection to a device is a specific, worse case of
+// this: the OS itself has to do a Bluetooth *bonding* handshake (the PIN
+// prompt), which on Android/Windows means a system dialog the user has to
+// physically notice and tap -- the GATT link stays unstable for the
+// entire time that dialog is sitting there unanswered. Confirmed in
+// practice: 4 attempts / ~20s total wasn't enough to survive that, but a
+// second manual connect (bonding already done, no PIN prompt) worked
+// first try. There's no Web Bluetooth API to detect "bonding in
+// progress", so the fix is just a much bigger patience budget on every
+// connection attempt, paired with an explicit "check for a pairing
+// prompt" hint -- harmless for an already-bonded device, which still
+// succeeds on attempt 1 with no visible delay either way.
+const CONFIGURE_MAX_ATTEMPTS = 10;
+const CONFIGURE_RETRY_DELAY_MS = 2000;
+const RECONNECT_SUB_RETRIES = 4;
+const RECONNECT_SUB_DELAY_MS = 1500;
 
 async function captureWithRetry(bleDevice, { freshConnection } = {}) {
   let connection = freshConnection ?? null;
@@ -236,11 +251,11 @@ async function captureWithRetry(bleDevice, { freshConnection } = {}) {
     try {
       if (!connection) {
         state.ui.busyMessage = attempt === 1
-          ? "Connecting…"
-          : `Reconnecting (attempt ${attempt}/${CONFIGURE_MAX_ATTEMPTS})…`;
+          ? "Connecting… if your device or OS shows a Bluetooth pairing/PIN prompt, accept it."
+          : `Reconnecting (attempt ${attempt}/${CONFIGURE_MAX_ATTEMPTS})… if a pairing prompt appeared, accept it -- this will keep retrying.`;
         state.connectionStatus = "connecting";
         renderApp();
-        connection = await reconnect(bleDevice, { retries: 3, delayMs: 1000 });
+        connection = await reconnect(bleDevice, { retries: RECONNECT_SUB_RETRIES, delayMs: RECONNECT_SUB_DELAY_MS });
       }
       state.connection = connection;
       watchConnection(connection);
@@ -254,7 +269,8 @@ async function captureWithRetry(bleDevice, { freshConnection } = {}) {
       console.warn(`Connect/configure attempt ${attempt}/${CONFIGURE_MAX_ATTEMPTS} failed`, err);
       connection = null; // discard the broken transport; force a fresh GATT connect next attempt
       if (attempt < CONFIGURE_MAX_ATTEMPTS) {
-        state.ui.busyMessage = `Connection dropped, retrying (${attempt}/${CONFIGURE_MAX_ATTEMPTS})…`;
+        state.ui.busyMessage = `Connection dropped, retrying (${attempt}/${CONFIGURE_MAX_ATTEMPTS})… ` +
+          "if this is the first time connecting to this device, watch for a pairing/PIN prompt.";
         renderApp();
         await new Promise((resolve) => setTimeout(resolve, CONFIGURE_RETRY_DELAY_MS));
       }
@@ -262,8 +278,11 @@ async function captureWithRetry(bleDevice, { freshConnection } = {}) {
   }
   throw new Error(
     `Could not read the device after ${CONFIGURE_MAX_ATTEMPTS} attempts (${lastErr?.message ?? lastErr}). ` +
-    "If this keeps happening, check the device is awake and in range, and that it's already paired at the OS " +
-    "level (Windows Bluetooth settings) -- some nRF52-based devices need that before Web Bluetooth GATT works reliably.",
+    "If this was the first time connecting to this device, check whether your OS is showing a Bluetooth " +
+    "pairing/PIN dialog that needs a tap to accept, then try again -- once a device is bonded, reconnecting is " +
+    "much faster. Otherwise, check the device is awake and in range, and that it's already paired at the OS " +
+    "level (Windows/Android Bluetooth settings) -- some nRF52-based devices need that before Web Bluetooth GATT " +
+    "works reliably.",
   );
 }
 

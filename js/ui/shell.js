@@ -41,7 +41,6 @@ function renderConnectionIndicator(state) {
     const name = state.connection?.bleDevice?.name ?? "device";
     const node = state.liveSnapshot?.nodeNum != null ? ` #${state.liveSnapshot.nodeNum}` : "";
     return `<span class="dot ok"></span> Connected: ${escapeHtml(name)}${node}
-      <button type="button" class="danger" data-action="factory-reset">Factory reset…</button>
       <button type="button" data-action="disconnect">Disconnect</button>`;
   }
   if (status === "connecting" || status === "configuring" || status === "reconnecting") {
@@ -64,18 +63,6 @@ export function onAction(state, action, target) {
       return { asyncAction: "connect-new" };
     case "disconnect":
       return { asyncAction: "disconnect" };
-    case "factory-reset": {
-      const name = state.connection?.bleDevice?.name ?? "this device";
-      const confirmed = confirm(
-        `Factory reset ${name}?\n\n` +
-        "This erases ALL configuration, channels, PKI keys, and node data, and cannot be undone -- the device " +
-        "reboots as if freshly flashed. If you haven't already, capture its current private key via Read -> " +
-        "Local identity before doing this, or it's gone.\n\n" +
-        "Continue?",
-      );
-      if (!confirmed) return true;
-      return { asyncAction: "factory-reset" };
-    }
     default:
       return false;
   }

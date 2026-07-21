@@ -68,6 +68,15 @@ pairing PIN. Two ways around that:
    terminal at 115200 baud) and read the PIN the firmware prints on
    boot/pairing.
 
+The very first connection to a given device is also just slower and
+flakier than every connection after it: the OS has to do its own
+Bluetooth *bonding* handshake (the PIN prompt is part of that), and the
+GATT link stays unstable the whole time that system dialog is sitting
+there unanswered. **Watch for a pairing/PIN confirmation popup from your
+phone or computer's OS** (not the browser) and accept it — the app
+retries for a good while specifically to ride this out, and once a
+device is bonded, every connection after the first is fast.
+
 Once you've built a global profile that manages `bluetooth.mode`/
 `bluetooth.fixedPin` (see Workflow below — set those two on your
 reference device however you configured it, then read+promote them like
@@ -106,13 +115,13 @@ Typical loop, once per fleet-wide setting you care about:
    which fields verified successfully. The Write tab is also where you
    rename or delete a global profile — there's no separate editor, just a
    read-only list of what it manages.
-6. **Factory reset** — while connected, the top-right connection indicator
-   has a **Factory reset…** button next to Disconnect. It erases the
-   device's config, channels, PKI keys and node data entirely (the
-   firmware disables Bluetooth and reboots immediately after, same as a
-   fresh flash) — asks for confirmation first, and the confirmation
-   reminds you to capture the device's private key via Read → Local
-   identity first if you haven't, since it can't be recovered afterward.
+6. **Factory reset** — at the bottom of the Write tab (only shown while
+   connected), a **Factory reset…** button erases the device's config,
+   channels, PKI keys and node data entirely (the firmware disables
+   Bluetooth and reboots immediately after, same as a fresh flash) —
+   asks for confirmation first, and the confirmation reminds you to
+   capture the device's private key via Read → Local identity first if
+   you haven't, since it can't be recovered afterward.
 7. **Data** — export/import the whole store as JSON for backup, or to
    move your fleet setup to another machine/browser.
 
