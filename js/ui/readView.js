@@ -235,8 +235,15 @@ export function onAction(state, action, target) {
       upsertGlobalProfile(state.store, target_);
       state.ui.selectedDiffRows.clear();
       state.ui.error = null;
-      state.route = "global";
-      state.ui.selectedGlobalId = target_.id;
+      // Keep pointing at the profile just built, so a second round of
+      // checking more boxes and promoting again continues the same
+      // profile instead of spawning a new one each time.
+      state.ui.promoteTargetId = target_.id;
+      // Stay on Read -- promoting is often done in several rounds (more
+      // fields, maybe from a second reference device) before moving on to
+      // Write. Pre-select the profile there anyway, as a convenience for
+      // whenever they do switch tabs.
+      state.ui.writeGlobalId = target_.id;
       return true;
     }
     case "toggle-reveal-read": {

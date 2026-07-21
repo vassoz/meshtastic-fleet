@@ -9,11 +9,11 @@
 import * as storage from "./storage.js";
 import * as shell from "./ui/shell.js";
 import * as fleetView from "./ui/fleet.js";
-import * as globalEditor from "./ui/globalEditor.js";
 import * as localEditor from "./ui/localEditor.js";
 import * as readView from "./ui/readView.js";
 import * as writeView from "./ui/writeView.js";
 import * as dataView from "./ui/dataView.js";
+import { Types } from "@meshtastic/core";
 import { connectNew, reconnect, disconnect as bleDisconnect } from "./conn.js";
 import { captureSnapshot } from "./snapshot.js";
 import { executeWritePlan, verifyWritePlan } from "./writer.js";
@@ -22,7 +22,6 @@ import { listLocalProfiles, upsertLocalProfile, touch } from "./profiles.js";
 
 const routeModules = {
   fleet: fleetView,
-  global: globalEditor,
   local: localEditor,
   read: readView,
   write: writeView,
@@ -39,10 +38,7 @@ const state = {
     error: null,
     busy: false,
     busyMessage: "",
-    selectedGlobalId: null,
     selectedLocalId: null,
-    globalEditorSection: "channels",
-    advancedExpanded: new Set(),
     revealedSecrets: new Set(),
     readMode: "global",
     readBaselineMode: "defaults",
@@ -74,8 +70,21 @@ state.render = renderApp;
 
 function dispatch(action, target, event) {
   const view = routeModules[state.route] ?? fleetView;
-  let result = shell.onAction(state, action, target, event);
-  if (result === false) result = view.onAction(state, action, target, event);
+  let result;
+  try {
+    result = shell.onAction(state, action, target, event);
+    if (result === false) result = view.onAction(state, action, target, event);
+  } catch (err) {
+    // A synchronous bug in an onAction handler (e.g. a malformed profile
+    // that fails to convert to protobuf JSON) must never look like the
+    // button did nothing -- that's exactly how a real bug here presented
+    // originally: buildWritePlan() threw, dispatch() had no try/catch, so
+    // the exception aborted silently before reaching renderApp().
+    console.error(`Action "${action}" failed`, err);
+    state.ui.error = err?.message || String(err);
+    renderApp();
+    return;
+  }
 
   if (result && typeof result === "object" && result.asyncAction) {
     runAsyncAction(result.asyncAction, target, event);
@@ -160,6 +169,50 @@ async function withTerminalConnectionStatus(fn) {
   }
 }
 
+// TransportWebBluetooth listens for the browser's `gattserverdisconnected`
+// event and reports it through MeshDevice.events.onDeviceStatus as
+// DeviceStatusEnum.DeviceDisconnected (confirmed in the vendored source:
+// transport's onGattDisconnected -> emitStatus(...) -> MeshDevice's
+// decodePacket -> updateDeviceStatus -> dispatches onDeviceStatus). But
+// captureSnapshot() only subscribes to that for the duration of a single
+// read -- once it resolves, nobody is listening anymore. If the BLE link
+// then dies quietly while the user is just clicking around the UI (not
+// mid-operation), connectionStatus stays stuck on "connected" until the
+// next real device call fails outright with a raw GATT error (exactly
+// what "Build plan does nothing" turned out to be: Build plan itself
+// never touches the device, but the *next* Write click did, against a
+// connection that had already silently died).
+//
+// This subscribes for the whole lifetime of a connection, not just one
+// read. The tricky part: the identical DeviceDisconnected status also
+// fires on a *deliberate* disconnect (transport.disconnect()'s own
+// docs: "emits DeviceDisconnected('user')") and the dispatched event
+// carries no reason -- onDeviceStatus.dispatch(status) drops it. So we
+// can't tell the two apart from the payload; instead, every handler that
+// intentionally tears down or replaces a connection sets state.ui.busy
+// first, and this listener stays quiet whenever busy is true, trusting
+// that handler to report its own outcome.
+let stopWatchingConnection = null;
+
+function watchConnection(connection) {
+  stopWatchingConnection?.();
+  stopWatchingConnection = null;
+  if (!connection) return;
+  stopWatchingConnection = connection.device.events.onDeviceStatus.subscribe((status) => {
+    if (status !== Types.DeviceStatusEnum.DeviceDisconnected) return;
+    if (state.ui.busy) return; // an in-flight handler owns this transition
+    if (state.connection !== connection) return; // listener from a superseded connection
+    console.warn("Device connection lost unexpectedly (gatt-disconnected)");
+    state.connection = null;
+    state.liveSnapshot = null;
+    state.connectionStatus = "disconnected";
+    state.ui.writePlan = null;
+    state.ui.writeVerify = null;
+    state.ui.error = "The device disconnected unexpectedly. Reconnect to continue.";
+    renderApp();
+  });
+}
+
 function onSnapshotProgress(label) {
   state.ui.busyMessage = `Reading: ${label}`;
   renderApp();
@@ -190,6 +243,7 @@ async function captureWithRetry(bleDevice, { freshConnection } = {}) {
         connection = await reconnect(bleDevice, { retries: 3, delayMs: 1000 });
       }
       state.connection = connection;
+      watchConnection(connection);
       state.connectionStatus = "configuring";
       state.ui.busyMessage = "Reading device configuration…";
       renderApp();
@@ -235,7 +289,10 @@ async function handleConnectNew() {
 }
 
 async function handleDisconnect() {
+  state.ui.busy = true; // keeps watchConnection() quiet -- this is the expected disconnect
+  renderApp();
   await bleDisconnect(state.connection);
+  watchConnection(null);
   state.connection = null;
   state.liveSnapshot = null;
   state.connectionStatus = "disconnected";
@@ -260,6 +317,7 @@ async function handleFactoryReset() {
     await state.connection.device.factoryResetDevice();
   } finally {
     await bleDisconnect(state.connection);
+    watchConnection(null);
     state.connection = null;
     state.liveSnapshot = null;
     state.connectionStatus = "disconnected";

@@ -115,23 +115,8 @@ input[type="checkbox"] { width: 16px; height: 16px; }
 
 fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem 1rem 1rem; margin: 1rem 0; }
 legend { padding: 0 0.4rem; font-weight: 600; }
-.nested-fields { margin-left: calc(var(--depth, 0) * 0.5rem); }
-
-/* ---------- field rows (schema-driven forms) ---------- */
-.field-row {
-  display: grid; grid-template-columns: minmax(220px, 1fr) minmax(180px, 2fr);
-  gap: 0.75rem; align-items: center; padding: 0.3rem 0; border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
-}
-.field-row.unsupported { color: var(--muted); font-size: 0.85rem; }
-.field-manage { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; }
-.field-label { font-size: 0.9rem; }
-.field-control input, .field-control select, .field-control textarea { max-width: 100%; }
-.field-row.sensitive .field-control { display: flex; }
 .secret-field { display: flex; gap: 0.4rem; align-items: center; width: 100%; }
 .secret-field input { flex: 1; }
-.flags-row { grid-template-columns: minmax(220px, 1fr) 3fr; align-items: start; }
-.flag-bits { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; }
-.flag-bit { display: flex; align-items: center; gap: 0.3rem; font-size: 0.85rem; }
 
 /* ---------- tabs for profile / section selection ---------- */
 .profile-tabs, .section-tabs { display: flex; gap: 0.35rem; flex-wrap: wrap; margin: 0.75rem 0; }
@@ -154,19 +139,9 @@ legend { padding: 0 0.4rem; font-weight: 600; }
 .badge.ok { background: color-mix(in srgb, var(--ok) 20%, transparent); color: var(--ok); }
 .badge.error { background: color-mix(in srgb, var(--danger) 20%, transparent); color: var(--danger); }
 
-/* ---------- channels ---------- */
-.channel-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 1rem; }
-.channel-card { margin: 0; }
-.psk-actions button { font-size: 0.8rem; }
-
-/* ---------- advanced tree ---------- */
-.advanced-section { border-bottom: 1px solid var(--border); }
-.advanced-summary {
-  width: 100%; text-align: left; background: none; border: none; padding: 0.5rem 0;
-  font-weight: 600; display: flex; align-items: center; gap: 0.4rem;
-}
-.disclosure { display: inline-block; width: 1em; }
-.advanced-body { padding: 0.25rem 0 1rem 1.4rem; }
+/* ---------- global profile summary (Write tab) ---------- */
+.profile-summary { margin: 0.75rem 0; padding: 0.75rem; background: var(--card-bg); border-radius: 8px; }
+.profile-summary input[type="text"] { max-width: 280px; }
 
 /* ---------- diff / plan / verify tables ---------- */
 .diff-table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; font-size: 0.85rem; }

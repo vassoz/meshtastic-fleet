@@ -75,6 +75,33 @@ export function randomBase64(byteLength) {
   return bytesToBase64(crypto.getRandomValues(new Uint8Array(byteLength)));
 }
 
+/**
+ * Recursively drop keys whose value is `undefined`. A profile can end up
+ * with a managed leaf whose stored value is `undefined` if it was
+ * promoted from a Read diff row where the device's side was absent --
+ * which happens legitimately whenever a field sits at its protobuf zero
+ * value (proto3 JSON omits implicit-presence fields that are 0/false/"",
+ * so a bool that's currently `false` on the reference device shows up as
+ * "not present" rather than as the literal value `false`). JSON itself
+ * has no way to represent `undefined`, and @bufbuild/protobuf's
+ * fromJson() throws on an explicit `undefined` rather than treating it
+ * the same as an absent key -- so this normalizes it back to "absent",
+ * which fromJson correctly resolves to the field's real zero value.
+ * Returns a new value; does not mutate.
+ */
+export function stripUndefinedDeep(value) {
+  if (Array.isArray(value)) return value.map(stripUndefinedDeep);
+  if (isPlainObject(value)) {
+    const out = {};
+    for (const [key, v] of Object.entries(value)) {
+      if (v === undefined) continue;
+      out[key] = stripUndefinedDeep(v);
+    }
+    return out;
+  }
+  return value;
+}
+
 export function escapeHtml(str) {
   return String(str).replace(/[&<>"']/g, (c) => ({
     "&": "&amp;",

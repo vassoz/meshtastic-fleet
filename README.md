@@ -6,10 +6,15 @@ configuration into two axes:
 
 - **Global profiles** — fleet-wide policy: channels + PSKs, LoRa region/
   preset, GPS/position behaviour, telemetry intervals, security policy.
-  Author once, write to every unit.
+  Built **only** by reading a reference device and selecting which fields
+  to keep — there's no form to hand-author one. Configure a single device
+  however you like (factory app, physical buttons, whatever), read it,
+  tick the fields worth propagating, and that becomes a reusable profile
+  to write to the rest of the fleet.
 - **Local profiles** — per-device identity: long/short name, PKI private
   key, optional fixed position, optional BLE fixed PIN. One per physical
-  unit.
+  unit, edited directly (each device's name/key is inherently unique, so
+  this one *is* a small form).
 
 **Read** pulls a device's live state and diffs it against firmware
 defaults, a saved global profile, or another saved snapshot, so you can
@@ -17,7 +22,8 @@ see exactly what differs and choose what to promote into a fleet profile.
 **Write** merges a chosen global + local profile, diffs the result against
 a *fresh* read of the connected device, previews the exact fields that
 will change, and writes only those — as a single begin/commit transaction
-(one flash save, one reboot), then reconnects and verifies.
+(one flash save, one reboot), then reconnects and verifies. Unchecked
+fields are never touched, on read or on write.
 
 Everything lives in this browser's `localStorage`. There's no server and
 nothing leaves your machine.
@@ -62,40 +68,44 @@ pairing PIN. Two ways around that:
    terminal at 115200 baud) and read the PIN the firmware prints on
    boot/pairing.
 
-Once connected, the easiest fix is to write a global profile that sets
-**Bluetooth mode → Fixed PIN** (Global → Advanced → Bluetooth) with a PIN
-of your choosing early on — after that, every device in the fleet re-pairs
-with the same known PIN, and you won't hit this again.
+Once you've built a global profile that manages `bluetooth.mode`/
+`bluetooth.fixedPin` (see Workflow below — set those two on your
+reference device however you configured it, then read+promote them like
+anything else), writing it to the rest of the fleet gives every unit the
+same known PIN, and you won't hit this again.
 
 ## Workflow
 
-1. **Global** — build one or more fleet-wide profiles. Curated tabs cover
-   Channels, Position/GPS, LoRa, Device, and Security; **Advanced** covers
-   every other `Config`/`ModuleConfig` section, generated directly from
-   the protobuf schema bundled in `@meshtastic/core` — so it's never
-   missing a field, even ones this README doesn't mention. Every field has
-   its own "manage this field" checkbox: unchecked fields are left alone
-   on the device.
-2. **Local** — one profile per physical unit: names, private key
-   (generate a fresh X25519 key or paste an existing one — e.g. one you
-   just read off the device), optional fixed position, optional BLE fixed
-   PIN.
-3. Connect a device (top right), then **Read** it:
-   - *Global config diff* shows every field that differs from your chosen
-     baseline (firmware defaults / a saved profile / another saved
-     snapshot), with checkboxes to promote selected values into a global
-     profile.
-   - *Local identity* shows names, hardware model, firmware version, and
-     the device's keys (masked; click reveal/copy) — "Save as local
-     profile" captures all of it in one click.
+Typical loop, once per fleet-wide setting you care about:
+
+1. Factory-reset or reflash a device, then configure it however you like
+   — the stock Meshtastic app, physical buttons, a serial CLI, whatever's
+   convenient. This is your **reference device**; MeshFleet never
+   hand-authors config, it only replicates what it reads.
+2. Connect that device (top right) and go to **Read** → *Global config
+   diff*. It's diffed against firmware defaults (or a saved profile, or
+   another saved snapshot — pick from the dropdown) so you see exactly
+   what's non-default. Tick the fields worth keeping — channels, LoRa
+   region, GPS intervals, whatever you actually changed — and hit
+   **Promote selected**, into a new or existing profile. Repeat across
+   several read sessions if you're pulling settings together from more
+   than one reference; promoting again reuses the same profile instead of
+   spawning a new one.
+3. **Local** — one profile per physical unit: names, private key
+   (generate a fresh X25519 key or paste one — e.g. one you just read off
+   a device before wiping it), optional fixed position, optional BLE
+   fixed PIN. This is the one thing that's still a hand-edited form,
+   since every device's identity is inherently unique.
 4. **Fleet** lists your local profiles as device slots — bind the
    currently-connected device to one, see its last-read timestamp, and
    jump to editing it.
-5. **Write** — pick a global + local profile, **Build plan** (this always
-   diffs against a fresh read of the connected device, never a stale
-   snapshot), review exactly what will change, confirm. The device
-   reboots once; the app reconnects automatically and reports which
-   fields verified successfully.
+5. **Write** — connect the next device, pick the global + local profile,
+   **Build plan** (always diffed against a fresh read of *this* device,
+   never a stale snapshot), review exactly what will change, confirm. The
+   device reboots once; the app reconnects automatically and reports
+   which fields verified successfully. The Write tab is also where you
+   rename or delete a global profile — there's no separate editor, just a
+   read-only list of what it manages.
 6. **Factory reset** — while connected, the top-right connection indicator
    has a **Factory reset…** button next to Disconnect. It erases the
    device's config, channels, PKI keys and node data entirely (the

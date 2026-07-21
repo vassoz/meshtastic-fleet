@@ -26,7 +26,7 @@ import {
   getModuleConfigSectionSchema,
 } from "./schema.js";
 import { managedBySection } from "./profiles.js";
-import { getPath, setPath, deepClone, overlayPaths } from "./util.js";
+import { getPath, setPath, deepClone, overlayPaths, stripUndefinedDeep } from "./util.js";
 import { deepDiffLeaves } from "./diff.js";
 
 const SECTIONS_REQUIRING_REPAIR_WARNING = new Set(["config.lora", "config.bluetooth"]);
@@ -82,7 +82,11 @@ export function buildWritePlan(globalProfile, localProfile, deviceSnapshot) {
     if (!schema) continue;
     const currentJson = deviceSnapshot?.[area]?.[sectionKey] ?? {};
     const overrides = getPath(mergedData, `${area}.${sectionKey}`) ?? {};
-    const mergedJson = overlayPaths(currentJson, overrides, fieldPaths);
+    // stripUndefinedDeep: a managed field promoted from a device where it
+    // sat at its protobuf zero value has no stored value (proto3 JSON
+    // omits it) -- normalize back to "absent" so fromJson() resolves it
+    // to the correct zero value instead of choking on a raw `undefined`.
+    const mergedJson = stripUndefinedDeep(overlayPaths(currentJson, overrides, fieldPaths));
     const preview = [...deepDiffLeaves(currentJson, mergedJson)].map(({ path, a, b }) => ({
       fieldPath: path.join("."),
       from: a,
@@ -90,7 +94,14 @@ export function buildWritePlan(globalProfile, localProfile, deviceSnapshot) {
     }));
     if (preview.length === 0) continue; // already matches; nothing to write
     if (SECTIONS_REQUIRING_REPAIR_WARNING.has(sectionRef)) needsRepairWarning = true;
-    const msg = fromJson(schema, mergedJson);
+    const sectionMsg = fromJson(schema, mergedJson);
+    // device.setConfig()/setModuleConfig() both dereference
+    // `payloadVariant.case` themselves (confirmed in the vendored
+    // source), so they need the top-level Config/ModuleConfig oneof
+    // wrapper around the section message, not the bare section message
+    // fromJson(getConfigSectionSchema(...), ...) produces on its own.
+    const wrapperSchema = area === "config" ? Protobuf.Config.ConfigSchema : Protobuf.ModuleConfig.ModuleConfigSchema;
+    const msg = create(wrapperSchema, { payloadVariant: { case: sectionKey, value: sectionMsg } });
     if (area === "config") configWrites.push({ key: sectionKey, msg, preview });
     else moduleConfigWrites.push({ key: sectionKey, msg, preview });
   }
@@ -106,7 +117,7 @@ export function buildWritePlan(globalProfile, localProfile, deviceSnapshot) {
   for (const [idx, fieldPaths] of Object.entries(channelFieldsByIndex)) {
     const currentJson = deviceSnapshot?.channels?.[idx] ?? {};
     const overrides = getPath(mergedData, `channels.${idx}`) ?? {};
-    const mergedJson = { ...overlayPaths(currentJson, overrides, fieldPaths), index: Number(idx) };
+    const mergedJson = stripUndefinedDeep({ ...overlayPaths(currentJson, overrides, fieldPaths), index: Number(idx) });
     const preview = [...deepDiffLeaves(currentJson, mergedJson)]
       .filter(({ path }) => path.join(".") !== "index" || currentJson.index !== Number(idx))
       .map(({ path, a, b }) => ({ fieldPath: path.join("."), from: a, to: b }));

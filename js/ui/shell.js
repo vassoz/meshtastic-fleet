@@ -1,16 +1,19 @@
 // App chrome: tab nav + connection indicator, and the handful of actions
 // that aren't specific to one tab (navigate, connect, disconnect, export,
-// import). Each tab's own view module (fleet/globalEditor/localEditor/
-// readView/writeView) renders its own content and handles its own
-// data-action names; shell.js's onAction() is tried first by main.js's
-// central dispatcher, and returns false to let the active view's handler
-// take over.
+// import). Each tab's own view module (fleet/localEditor/readView/
+// writeView) renders its own content and handles its own data-action
+// names; shell.js's onAction() is tried first by main.js's central
+// dispatcher, and returns false to let the active view's handler take
+// over.
+//
+// There's no manual "author a global profile by hand" tab: global
+// profiles are built exclusively by reading a reference device (Read tab)
+// and promoting the specific fields you want to keep -- see readView.js.
 import { escapeHtml, formatTimestamp } from "../util.js";
 import { bluetoothAvailable } from "../conn.js";
 
 const TABS = [
   { route: "fleet", label: "Fleet" },
-  { route: "global", label: "Global" },
   { route: "local", label: "Local" },
   { route: "read", label: "Read" },
   { route: "write", label: "Write" },
@@ -53,7 +56,6 @@ export function onAction(state, action, target) {
     case "nav":
       state.route = target.dataset.route;
       if (target.dataset.selectLocal) state.ui.selectedLocalId = target.dataset.selectLocal;
-      if (target.dataset.selectGlobal) state.ui.selectedGlobalId = target.dataset.selectGlobal;
       return true;
     case "dismiss-error":
       state.ui.error = null;
