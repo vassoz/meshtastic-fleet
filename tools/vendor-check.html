@@ -1,0 +1,106 @@
+<!doctype html>
+<!--
+  Diagnostic, not part of the app: exercises MeshDevice against a mock
+  Transport (no real Bluetooth/hardware needed) to catch environment gaps
+  in the vendored dependency closure -- e.g. the two bugs this caught
+  during development: @meshtastic/core's bundled tslog logger throws on
+  every debug/info log call if the vendored `util` polyfill's
+  util.types.* predicates aren't implemented (they're stubs that throw by
+  default), and it references the bare `Buffer` global directly (only
+  env-shim.js can fix that, not the import map, since it's not an import).
+
+  Re-run this after any `python3 tools/vendor.py` version bump:
+    python3 -m http.server 8080   (from the project root)
+    open http://localhost:8080/tools/vendor-check.html
+  All three lines should say PASS.
+-->
+<html><head><meta charset="utf-8">
+<script type="importmap">
+{
+  "imports": {
+    "@meshtastic/core": "../vendor/meshtastic-core/mod.js",
+    "@meshtastic/transport-web-bluetooth": "../vendor/meshtastic-transport-web-bluetooth/mod.js",
+    "@bufbuild/protobuf": "../vendor/bufbuild-protobuf/index.js",
+    "crc/calculators/crc16ccitt": "../vendor/crc/calculators/crc16ccitt.js",
+    "os": "../vendor/node/os.mjs",
+    "path": "../vendor/node/path.mjs",
+    "util": "../vendor/node/util.mjs"
+  }
+}
+</script>
+</head><body>
+<div id="app"></div>
+<script src="../js/env-shim.js"></script>
+<script type="module">
+import { MeshDevice } from "@meshtastic/core";
+import * as utilTypes from "util";
+
+const lines = [];
+function report(line, ok) {
+  const text = (ok === true ? "PASS " : ok === false ? "FAIL " : "") + line;
+  lines.push(text);
+  console.log(text);
+  document.getElementById("app").innerHTML = "<pre>" + lines.join("\n---\n") + "</pre>";
+}
+
+// 1. Directly exercise the previously-broken util.types predicates.
+try {
+  const r1 = utilTypes.types.isNativeError(new Error("x"));
+  const r2 = utilTypes.types.isTypedArray(new Uint8Array(2));
+  const r3 = utilTypes.types.isProxy({});
+  report(`util.types predicates no longer throw (isNativeError=${r1}, isTypedArray=${r2}, isProxy=${r3})`, true);
+} catch (err) {
+  report(`util.types predicates threw: ${err && err.stack}`, false);
+}
+
+// 2. Reproduce the exact crash path: MeshDevice.configure() -> internal
+// tslog Logger.debug/info calls with an object payload -- no real BLE
+// hardware needed, just a mock Transport that satisfies the interface.
+function makeMockTransport() {
+  const written = [];
+  const toDevice = new WritableStream({
+    write(chunk) { written.push(chunk); },
+  });
+  const fromDevice = new ReadableStream({
+    start() { /* never emits; we only care that configure() doesn't throw while sending */ },
+  });
+  return { toDevice, fromDevice, disconnect: async () => {}, _written: written };
+}
+
+// configure()/sendText() wait on the send queue, which (with this mock
+// transport) never sees a device ack -- so they never actually resolve.
+// That's fine: all we're checking here is that the SEND path, including
+// every log call it makes along the way, doesn't throw synchronously or
+// via an unhandled rejection shortly after starting. Race against a short
+// timeout instead of awaiting to completion.
+function raceTimeout(promise, ms) {
+  return Promise.race([
+    promise.then(() => ({ settled: "resolved" })).catch((err) => ({ settled: "rejected", err })),
+    new Promise((resolve) => setTimeout(() => resolve({ settled: "pending" }), ms)),
+  ]);
+}
+
+try {
+  const transport = makeMockTransport();
+  const device = new MeshDevice(transport);
+  const result = await raceTimeout(device.configure(), 1500);
+  if (result.settled === "rejected") throw result.err;
+  report(`MeshDevice.configure() send path did not throw (status: ${result.settled}, ${transport._written.length} packet(s) written)`, transport._written.length > 0);
+} catch (err) {
+  report(`MeshDevice.configure() THREW: ${err && err.stack ? err.stack : err}`, false);
+}
+
+// 3. Also exercise sendText, which goes through the same logging path with
+// a different payload shape.
+try {
+  const transport = makeMockTransport();
+  const device = new MeshDevice(transport);
+  const result = await raceTimeout(device.sendText("hello fleet"), 1500);
+  if (result.settled === "rejected") throw result.err;
+  report(`MeshDevice.sendText() send path did not throw (status: ${result.settled}, ${transport._written.length} packet(s) written)`, transport._written.length > 0);
+} catch (err) {
+  report(`MeshDevice.sendText() THREW: ${err && err.stack ? err.stack : err}`, false);
+}
+
+</script>
+</body></html>

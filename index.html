@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MeshFleet</title>
+<link rel="stylesheet" href="./css/app.css" />
+<script type="importmap">
+{
+  "imports": {
+    "@meshtastic/core": "./vendor/meshtastic-core/mod.js",
+    "@meshtastic/transport-web-bluetooth": "./vendor/meshtastic-transport-web-bluetooth/mod.js",
+    "@bufbuild/protobuf": "./vendor/bufbuild-protobuf/index.js",
+    "@bufbuild/protobuf/wire": "./vendor/bufbuild-protobuf/wire/index.js",
+    "crc/calculators/crc16ccitt": "./vendor/crc/calculators/crc16ccitt.js",
+    "os": "./vendor/node/os.mjs",
+    "path": "./vendor/node/path.mjs",
+    "util": "./vendor/node/util.mjs"
+  }
+}
+</script>
+</head>
+<body>
+<div id="app">
+  <p class="loading">Loading MeshFleet…</p>
+</div>
+<script src="./js/env-shim.js"></script>
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>

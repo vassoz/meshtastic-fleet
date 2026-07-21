@@ -1,0 +1,8 @@
+# Vendored third-party dependencies -- regenerate with `python3 tools/vendor.py`.
+# Not our code, fully reproducible from PINNED_VERSIONS in tools/vendor.py.
+/vendor/
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp

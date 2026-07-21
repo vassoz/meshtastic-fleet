@@ -1,0 +1,191 @@
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --bg-alt: #f7f7f8;
+  --fg: #1a1a1a;
+  --muted: #666;
+  --border: #d9d9d9;
+  --accent: #2563eb;
+  --accent-fg: #ffffff;
+  --danger: #dc2626;
+  --ok: #16a34a;
+  --warn: #b45309;
+  --card-bg: #f7f7f8;
+  --input-bg: #ffffff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17181c;
+    --bg-alt: #1c1d22;
+    --fg: #e8e8ea;
+    --muted: #9a9aa2;
+    --border: #33343a;
+    --accent: #5b8def;
+    --accent-fg: #0b1220;
+    --danger: #f87171;
+    --ok: #4ade80;
+    --warn: #fbbf24;
+    --card-bg: #1f2024;
+    --input-bg: #24252b;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body { height: 100%; }
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  line-height: 1.4;
+  font-size: 14px;
+}
+
+#app { max-width: 1100px; margin: 0 auto; padding: 0 1rem 3rem; }
+
+h2 { margin: 1rem 0 0.5rem; }
+h3 { margin: 1rem 0 0.5rem; font-size: 1rem; }
+h4 { margin: 0.75rem 0 0.25rem; font-size: 0.9rem; color: var(--muted); }
+
+.muted { color: var(--muted); }
+
+/* ---------- header ---------- */
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  z-index: 10;
+}
+.brand { font-weight: 700; font-size: 1.1rem; }
+.tabs { display: flex; gap: 0.25rem; flex-wrap: wrap; }
+.tab {
+  background: none; border: 1px solid transparent; border-radius: 6px;
+  padding: 0.4rem 0.75rem; cursor: pointer; color: var(--fg); font: inherit;
+}
+.tab:hover { background: var(--bg-alt); }
+.tab.active { background: var(--accent); color: var(--accent-fg); }
+.conn-indicator { margin-left: auto; display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; }
+.dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.dot.ok { background: var(--ok); }
+.dot.off { background: var(--muted); }
+.dot.busy { background: var(--warn); animation: pulse 1.2s infinite ease-in-out; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+.banner {
+  padding: 0.6rem 1rem; margin: 0.5rem 0; border-radius: 6px; font-size: 0.9rem;
+  display: flex; justify-content: space-between; align-items: center; gap: 1rem;
+}
+.banner.error { background: color-mix(in srgb, var(--danger) 15%, transparent); border: 1px solid var(--danger); }
+.banner.warn { background: color-mix(in srgb, var(--warn) 15%, transparent); border: 1px solid var(--warn); }
+.banner button { background: none; border: none; color: inherit; cursor: pointer; font-size: 1rem; }
+
+/* ---------- generic controls ---------- */
+button {
+  font: inherit; padding: 0.4rem 0.75rem; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--bg-alt); color: var(--fg); cursor: pointer;
+}
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); font-weight: 600; }
+button.danger { color: var(--danger); border-color: var(--danger); background: none; }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+input[type="text"], input[type="number"], input[type="password"], select, textarea {
+  font: inherit; padding: 0.35rem 0.5rem; border-radius: 6px; border: 1px solid var(--border);
+  background: var(--input-bg); color: var(--fg); width: 100%; max-width: 420px;
+}
+textarea { max-width: 100%; font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 0.85rem; }
+input[type="checkbox"] { width: 16px; height: 16px; }
+
+.row { display: block; margin: 0.5rem 0; font-size: 0.85rem; color: var(--muted); }
+.row input, .row select { display: block; margin-top: 0.2rem; color: var(--fg); }
+.row.inline { display: inline-flex; align-items: center; gap: 0.4rem; margin-right: 0.75rem; }
+.row.inline select { width: auto; margin-top: 0; }
+
+.row-actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin: 0.75rem 0; }
+.danger-zone { margin-top: 2rem; padding-top: 1rem; border-top: 1px dashed var(--border); }
+
+fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem 1rem 1rem; margin: 1rem 0; }
+legend { padding: 0 0.4rem; font-weight: 600; }
+.nested-fields { margin-left: calc(var(--depth, 0) * 0.5rem); }
+
+/* ---------- field rows (schema-driven forms) ---------- */
+.field-row {
+  display: grid; grid-template-columns: minmax(220px, 1fr) minmax(180px, 2fr);
+  gap: 0.75rem; align-items: center; padding: 0.3rem 0; border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+}
+.field-row.unsupported { color: var(--muted); font-size: 0.85rem; }
+.field-manage { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; }
+.field-label { font-size: 0.9rem; }
+.field-control input, .field-control select, .field-control textarea { max-width: 100%; }
+.field-row.sensitive .field-control { display: flex; }
+.secret-field { display: flex; gap: 0.4rem; align-items: center; width: 100%; }
+.secret-field input { flex: 1; }
+.flags-row { grid-template-columns: minmax(220px, 1fr) 3fr; align-items: start; }
+.flag-bits { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; }
+.flag-bit { display: flex; align-items: center; gap: 0.3rem; font-size: 0.85rem; }
+
+/* ---------- tabs for profile / section selection ---------- */
+.profile-tabs, .section-tabs { display: flex; gap: 0.35rem; flex-wrap: wrap; margin: 0.75rem 0; }
+.profile-tab, .section-tab {
+  background: var(--card-bg); border: 1px solid var(--border); border-radius: 6px;
+  padding: 0.3rem 0.65rem; cursor: pointer; color: var(--fg); font: inherit; font-size: 0.85rem;
+}
+.profile-tab.active, .section-tab.active { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+
+/* ---------- cards (fleet) ---------- */
+.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 1rem; margin-top: 1rem; }
+.card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; }
+.card.connected { border-color: var(--ok); }
+.card h3 { margin-top: 0; }
+.card dl { margin: 0.5rem 0; font-size: 0.85rem; }
+.card dt { color: var(--muted); float: left; clear: left; width: 90px; }
+.card dd { margin: 0 0 0.3rem 90px; }
+.card-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.75rem; }
+.badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 999px; font-size: 0.75rem; }
+.badge.ok { background: color-mix(in srgb, var(--ok) 20%, transparent); color: var(--ok); }
+.badge.error { background: color-mix(in srgb, var(--danger) 20%, transparent); color: var(--danger); }
+
+/* ---------- channels ---------- */
+.channel-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 1rem; }
+.channel-card { margin: 0; }
+.psk-actions button { font-size: 0.8rem; }
+
+/* ---------- advanced tree ---------- */
+.advanced-section { border-bottom: 1px solid var(--border); }
+.advanced-summary {
+  width: 100%; text-align: left; background: none; border: none; padding: 0.5rem 0;
+  font-weight: 600; display: flex; align-items: center; gap: 0.4rem;
+}
+.disclosure { display: inline-block; width: 1em; }
+.advanced-body { padding: 0.25rem 0 1rem 1.4rem; }
+
+/* ---------- diff / plan / verify tables ---------- */
+.diff-table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; font-size: 0.85rem; }
+.diff-table th, .diff-table td { text-align: left; padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--border); }
+.diff-table th { color: var(--muted); font-weight: 600; }
+.diff-table tr.ok td { color: var(--ok); }
+.diff-table tr.mismatch td { color: var(--danger); }
+.diff-panel, .plan-panel, .verify-panel, .write-log { margin-top: 1rem; }
+.plan-section { margin: 0.75rem 0; }
+.write-log {
+  font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 0.85rem;
+  background: var(--bg-alt); border-radius: 8px; padding: 0.75rem; max-height: 260px; overflow-y: auto;
+}
+
+/* ---------- misc ---------- */
+.mono { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 0.85rem; word-break: break-all; }
+.file-input-label { position: relative; overflow: hidden; display: inline-block; }
+.file-input-label input[type="file"] {
+  position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%;
+}
+.write-pickers { display: flex; gap: 1rem; align-items: flex-end; flex-wrap: wrap; }
+.write-pickers .row { margin: 0; }

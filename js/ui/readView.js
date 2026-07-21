@@ -1,0 +1,277 @@
+// Read tab: capture the connected device's state and either (a) diff its
+// global config against a chosen baseline so you can pick what to
+// promote into a fleet profile, or (b) show its local identity (names,
+// keys, position) so it can be saved as a local profile.
+import { diffConfigTrees, diffChannels } from "../diff.js";
+import { zeroBaseline, firmwareDefaultNote } from "../defaults.js";
+import {
+  listGlobalProfiles,
+  listLocalProfiles,
+  newGlobalProfile,
+  newLocalProfile,
+  upsertGlobalProfile,
+  upsertLocalProfile,
+  promoteRows,
+  touch,
+} from "../profiles.js";
+import { formatValue } from "./fields.js";
+import { escapeHtml, formatTimestamp } from "../util.js";
+
+export function render(state) {
+  if (state.connectionStatus !== "connected") {
+    return `<section class="view read-view">
+      <h2>Read</h2>
+      <p class="muted">Connect a device (top right) to read its configuration.</p>
+    </section>`;
+  }
+  if (!state.liveSnapshot) {
+    return `<section class="view read-view">
+      <h2>Read</h2>
+      <p class="muted">${escapeHtml(state.ui.busyMessage || "Capturing device configuration…")}</p>
+    </section>`;
+  }
+
+  const mode = state.ui.readMode || "global";
+  return `<section class="view read-view">
+    <div class="view-header">
+      <h2>Read</h2>
+      <div class="row-actions">
+        <button type="button" data-action="recapture">Re-read device</button>
+        <button type="button" data-action="save-snapshot">Save snapshot for later comparison</button>
+      </div>
+    </div>
+    <div class="section-tabs">
+      <button type="button" class="section-tab${mode === "global" ? " active" : ""}" data-action="set-read-mode" data-mode="global">Global config diff</button>
+      <button type="button" class="section-tab${mode === "local" ? " active" : ""}" data-action="set-read-mode" data-mode="local">Local identity</button>
+    </div>
+    ${mode === "global" ? renderGlobalDiff(state) : renderLocalRead(state)}
+  </section>`;
+}
+
+function baselineTree(state) {
+  const mode = state.ui.readBaselineMode || "defaults";
+  if (mode === "defaults") return { label: "firmware defaults", tree: zeroBaseline() };
+  if (mode === "profile") {
+    const p = state.store.globalProfiles[state.ui.readBaselineId];
+    return { label: p ? `profile "${p.name}"` : "(pick a profile)", tree: p ? { config: unflatten(p, "config"), moduleConfig: unflatten(p, "moduleConfig") } : { config: {}, moduleConfig: {} } };
+  }
+  if (mode === "snapshot") {
+    const snap = state.store.snapshots[state.ui.readBaselineId];
+    return { label: snap ? `snapshot from ${formatTimestamp(snap.capturedAt)}` : "(pick a snapshot)", tree: snap ?? { config: {}, moduleConfig: {} } };
+  }
+  return { label: "firmware defaults", tree: zeroBaseline() };
+}
+
+// A global profile's `data` tree already mirrors {config:{section:{...}}},
+// but only at the specific managed leaf paths -- which is exactly what
+// deepDiffLeaves expects to compare against, so no unflattening logic is
+// actually needed beyond reading the sub-tree directly.
+function unflatten(profile, area) {
+  return profile.data[area] ?? {};
+}
+
+function renderGlobalDiff(state) {
+  const { label, tree } = baselineTree(state);
+  const snap = state.liveSnapshot;
+  const rows = diffConfigTrees(tree, { config: snap.config, moduleConfig: snap.moduleConfig }, {
+    annotate: (area, sectionKey, fieldPath) =>
+      state.ui.readBaselineMode === "defaults" || !state.ui.readBaselineMode
+        ? firmwareDefaultNote(`${area}.${sectionKey}`, fieldPath.split(".")[0])
+        : null,
+  });
+  const channelRows = diffChannels(tree.channels ?? {}, snap.channels);
+  const allRows = [...rows, ...channelRows];
+
+  const globalProfiles = listGlobalProfiles(state.store);
+  const snapshots = Object.entries(state.store.snapshots).map(([id, s]) => ({ id, ...s }));
+
+  const baselinePicker = `
+    <label class="row inline">Compare against
+      <select data-action="set-baseline-mode">
+        <option value="defaults" ${state.ui.readBaselineMode === "defaults" || !state.ui.readBaselineMode ? "selected" : ""}>Firmware defaults</option>
+        <option value="profile" ${state.ui.readBaselineMode === "profile" ? "selected" : ""}>A saved global profile</option>
+        <option value="snapshot" ${state.ui.readBaselineMode === "snapshot" ? "selected" : ""}>Another saved snapshot</option>
+      </select>
+    </label>
+    ${state.ui.readBaselineMode === "profile" ? `
+      <select data-action="set-baseline-id">
+        <option value="">— choose —</option>
+        ${globalProfiles.map((p) => `<option value="${p.id}" ${state.ui.readBaselineId === p.id ? "selected" : ""}>${escapeHtml(p.name)}</option>`).join("")}
+      </select>` : ""}
+    ${state.ui.readBaselineMode === "snapshot" ? `
+      <select data-action="set-baseline-id">
+        <option value="">— choose —</option>
+        ${snapshots.map((s) => `<option value="${s.id}" ${state.ui.readBaselineId === s.id ? "selected" : ""}>${escapeHtml(s.label ?? s.id)} (${formatTimestamp(s.capturedAt)})</option>`).join("")}
+      </select>` : ""}
+    <span class="muted">baseline: ${escapeHtml(label)}</span>`;
+
+  if (allRows.length === 0) {
+    return `<div class="diff-panel">${baselinePicker}<p class="muted">No differences from ${escapeHtml(label)}.</p></div>`;
+  }
+
+  const rowsHtml = allRows.map((row) => {
+    const key = `${row.area}.${row.sectionKey}.${row.fieldPath}`;
+    const checked = state.ui.selectedDiffRows.has(key);
+    const baselineDisplay = row.baselineValue === undefined
+      ? (row.note ? `<span class="muted">unset (${escapeHtml(row.note.note)})</span>` : '<span class="muted">unset</span>')
+      : escapeHtml(formatValue(row.baselineValue));
+    return `<tr>
+      <td><input type="checkbox" data-action="toggle-diff-row" data-key="${escapeHtml(key)}" ${checked ? "checked" : ""} /></td>
+      <td>${escapeHtml(row.area)}${row.area === "channels" ? ` #${row.sectionKey}` : `.${escapeHtml(row.sectionKey)}`}</td>
+      <td>${escapeHtml(row.label)}</td>
+      <td>${baselineDisplay}</td>
+      <td>${escapeHtml(formatValue(row.otherValue))}</td>
+    </tr>`;
+  }).join("");
+
+  return `<div class="diff-panel">
+    ${baselinePicker}
+    <div class="row-actions">
+      <button type="button" data-action="select-all-diffs">Select all</button>
+      <button type="button" data-action="select-none-diffs">Select none</button>
+      <select data-action="promote-target-select">
+        <option value="new">New global profile…</option>
+        ${globalProfiles.map((p) => `<option value="${p.id}" ${state.ui.promoteTargetId === p.id ? "selected" : ""}>${escapeHtml(p.name)}</option>`).join("")}
+      </select>
+      <button type="button" data-action="promote-selected">Promote selected →</button>
+    </div>
+    <table class="diff-table">
+      <thead><tr><th></th><th>Section</th><th>Field</th><th>Baseline</th><th>Device</th></tr></thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>
+  </div>`;
+}
+
+function renderLocalRead(state) {
+  const snap = state.liveSnapshot;
+  const revealed = state.ui.revealedSecrets.has("read.privateKey");
+  const owner = snap.owner ?? {};
+  const boundProfile = listLocalProfiles(state.store).find((p) => p.boundTo?.nodeNum === snap.nodeNum);
+
+  return `<div class="read-local-panel">
+    <dl>
+      <dt>Node number</dt><dd>#${snap.nodeNum ?? "?"}</dd>
+      <dt>Hardware model</dt><dd>${escapeHtml(snap.hwModel ?? "—")}</dd>
+      <dt>Firmware</dt><dd>${escapeHtml(snap.firmwareVersion ?? "—")}</dd>
+      <dt>Long name</dt><dd>${escapeHtml(owner.longName ?? "—")}</dd>
+      <dt>Short name</dt><dd>${escapeHtml(owner.shortName ?? "—")}</dd>
+      <dt>Licensed</dt><dd>${owner.isLicensed ? "yes" : "no"}</dd>
+      <dt>Public key</dt><dd class="mono">${escapeHtml(owner.publicKey ?? snap.config?.security?.publicKey ?? "—")}
+        ${owner.publicKey || snap.config?.security?.publicKey ? `<button type="button" data-action="copy-value" data-value="${escapeHtml(owner.publicKey ?? snap.config?.security?.publicKey)}">copy</button>` : ""}</dd>
+      <dt>Private key</dt><dd class="mono">
+        ${snap.config?.security?.privateKey ? `
+          <span>${revealed ? escapeHtml(snap.config.security.privateKey) : "•".repeat(24)}</span>
+          <button type="button" data-action="toggle-reveal-read" data-key="privateKey">${revealed ? "hide" : "reveal"}</button>
+          <button type="button" data-action="copy-value" data-value="${escapeHtml(snap.config.security.privateKey)}">copy</button>
+        ` : '<span class="muted">not exposed by device</span>'}</dd>
+      <dt>Fixed position</dt><dd>${snap.config?.position?.fixedPosition
+        ? `${(snap.position?.latitudeI ?? 0) * 1e-7}, ${(snap.position?.longitudeI ?? 0) * 1e-7}${snap.position?.altitude != null ? ` @ ${snap.position.altitude}m` : ""}`
+        : "not set"}</dd>
+    </dl>
+    <div class="row-actions">
+      <button type="button" data-action="save-local-from-read" data-mode="new">Save as new local profile</button>
+      ${boundProfile ? `<button type="button" data-action="save-local-from-read" data-mode="update" data-id="${boundProfile.id}">Update "${escapeHtml(boundProfile.label)}"</button>` : ""}
+    </div>
+  </div>`;
+}
+
+export function onAction(state, action, target) {
+  switch (action) {
+    case "recapture":
+      return { asyncAction: "recapture" };
+    case "save-snapshot": {
+      if (!state.liveSnapshot) return true;
+      const id = state.liveSnapshot.nodeNum != null
+        ? (listLocalProfiles(state.store).find((p) => p.boundTo?.nodeNum === state.liveSnapshot.nodeNum)?.id ?? `snap-${Date.now()}`)
+        : `snap-${Date.now()}`;
+      state.store.snapshots[id] = { ...state.liveSnapshot, label: state.connection?.bleDevice?.name ?? id };
+      return true;
+    }
+    case "set-read-mode":
+      state.ui.readMode = target.dataset.mode;
+      return true;
+    case "set-baseline-mode":
+      state.ui.readBaselineMode = target.value;
+      state.ui.readBaselineId = null;
+      return true;
+    case "set-baseline-id":
+      state.ui.readBaselineId = target.value || null;
+      return true;
+    case "toggle-diff-row": {
+      const key = target.dataset.key;
+      if (state.ui.selectedDiffRows.has(key)) state.ui.selectedDiffRows.delete(key);
+      else state.ui.selectedDiffRows.add(key);
+      return true;
+    }
+    case "select-all-diffs": {
+      const snap = state.liveSnapshot;
+      const { tree } = baselineTree(state);
+      const rows = [...diffConfigTrees(tree, { config: snap.config, moduleConfig: snap.moduleConfig }),
+        ...diffChannels(tree.channels ?? {}, snap.channels)];
+      for (const row of rows) state.ui.selectedDiffRows.add(`${row.area}.${row.sectionKey}.${row.fieldPath}`);
+      return true;
+    }
+    case "select-none-diffs":
+      state.ui.selectedDiffRows.clear();
+      return true;
+    case "promote-target-select":
+      state.ui.promoteTargetId = target.value;
+      return true;
+    case "promote-selected": {
+      const snap = state.liveSnapshot;
+      const { tree } = baselineTree(state);
+      const rows = [...diffConfigTrees(tree, { config: snap.config, moduleConfig: snap.moduleConfig }),
+        ...diffChannels(tree.channels ?? {}, snap.channels)]
+        .filter((row) => state.ui.selectedDiffRows.has(`${row.area}.${row.sectionKey}.${row.fieldPath}`));
+      if (rows.length === 0) return true;
+      let target_ = state.ui.promoteTargetId && state.ui.promoteTargetId !== "new"
+        ? state.store.globalProfiles[state.ui.promoteTargetId]
+        : null;
+      if (!target_) {
+        target_ = newGlobalProfile(`Promoted from device #${snap.nodeNum}`);
+        upsertGlobalProfile(state.store, target_);
+      }
+      promoteRows(target_, rows);
+      upsertGlobalProfile(state.store, target_);
+      state.ui.selectedDiffRows.clear();
+      state.ui.error = null;
+      state.route = "global";
+      state.ui.selectedGlobalId = target_.id;
+      return true;
+    }
+    case "toggle-reveal-read": {
+      const key = `read.${target.dataset.key}`;
+      if (state.ui.revealedSecrets.has(key)) state.ui.revealedSecrets.delete(key);
+      else state.ui.revealedSecrets.add(key);
+      return true;
+    }
+    case "copy-value":
+      navigator.clipboard?.writeText(target.dataset.value).catch(() => {});
+      return true;
+    case "save-local-from-read": {
+      const snap = state.liveSnapshot;
+      let profile;
+      if (target.dataset.mode === "update") {
+        profile = state.store.localProfiles[target.dataset.id];
+      }
+      if (!profile) {
+        profile = newLocalProfile(snap.owner?.longName || `Device #${snap.nodeNum}`);
+      }
+      profile.owner = {
+        longName: snap.owner?.longName ?? "",
+        shortName: snap.owner?.shortName ?? "",
+        isLicensed: !!snap.owner?.isLicensed,
+      };
+      if (snap.config?.security?.privateKey) profile.security.privateKey = snap.config.security.privateKey;
+      profile.security.publicKey = snap.owner?.publicKey ?? snap.config?.security?.publicKey ?? "";
+      profile.boundTo = { nodeNum: snap.nodeNum, bleName: state.connection?.bleDevice?.name ?? null, hwModel: snap.hwModel ?? null };
+      touch(profile);
+      upsertLocalProfile(state.store, profile);
+      state.ui.selectedLocalId = profile.id;
+      state.route = "local";
+      return true;
+    }
+    default:
+      return false;
+  }
+}
