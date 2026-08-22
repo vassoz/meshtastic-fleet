@@ -137,6 +137,9 @@ async function runAsyncAction(name, target) {
       case "factory-reset":
         await withTerminalConnectionStatus(handleFactoryReset);
         break;
+      case "enter-dfu-mode":
+        await withTerminalConnectionStatus(handleEnterDfuMode);
+        break;
       default:
         console.warn("Unknown async action", name);
     }
@@ -358,6 +361,35 @@ async function handleFactoryReset() {
       "is likely stale (the firmware wiped its own bonding info, but your OS didn't) -- remove/forget it in " +
       "your OS's Bluetooth settings, then reconnect to re-pair from scratch. On Windows, " +
       "tools/windows-unpair-bluetooth.ps1 in this repo does that from the command line.";
+  }
+}
+
+async function handleEnterDfuMode() {
+  if (!state.connection) throw new Error("Not connected");
+  state.ui.busy = true;
+  state.ui.busyMessage = "Entering DFU mode…";
+  renderApp();
+
+  // enterDfuMode() reboots straight into the nRF52 bootloader, which
+  // advertises as an entirely different BLE peripheral (Nordic DFU
+  // service, not Meshtastic's) -- there's nothing to reconnect to as a
+  // MeshDevice afterward, so this is treated the same as a manual
+  // disconnect, same as factory reset. Unlike factory reset, nothing on
+  // the device is erased, so there's no stale-OS-pairing concern here:
+  // the bootloader isn't the same advertised device the OS bonded with.
+  try {
+    await state.connection.device.enterDfuMode();
+  } finally {
+    await bleDisconnect(state.connection);
+    watchConnection(null);
+    state.connection = null;
+    state.liveSnapshot = null;
+    state.connectionStatus = "disconnected";
+    state.ui.writePlan = null;
+    state.ui.writeVerify = null;
+    state.ui.notice = "Device is now in DFU (bootloader) mode and disconnected from MeshFleet. " +
+      "It won't act as a normal Meshtastic node again until you flash new firmware over it, or " +
+      "reset/power-cycle it back to normal operation.";
   }
 }
 

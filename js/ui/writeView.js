@@ -59,6 +59,7 @@ export function render(state) {
 function renderDangerZone(state) {
   const name = state.connection?.bleDevice?.name ?? "this device";
   return `<div class="row-actions danger-zone danger-zone-top">
+    <button type="button" data-action="enter-dfu-mode">Enter DFU mode…</button>
     <button type="button" class="danger" data-action="factory-reset">Factory reset ${escapeHtml(name)}…</button>
   </div>`;
 }
@@ -202,6 +203,18 @@ export function onAction(state, action, target) {
       );
       if (!confirmed) return true;
       return { asyncAction: "factory-reset" };
+    }
+    case "enter-dfu-mode": {
+      const name = state.connection?.bleDevice?.name ?? "this device";
+      const confirmed = confirm(
+        `Put ${name} into DFU (bootloader) mode?\n\n` +
+        "This disconnects MeshFleet immediately. Nothing is erased, but the device stops acting as a normal " +
+        "Meshtastic node until you either flash new firmware over it, or reset/power-cycle it back to normal " +
+        "operation. Only do this if you're about to flash firmware.\n\n" +
+        "Continue?",
+      );
+      if (!confirmed) return true;
+      return { asyncAction: "enter-dfu-mode" };
     }
     default:
       return false;
