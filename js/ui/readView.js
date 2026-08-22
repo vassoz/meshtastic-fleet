@@ -185,9 +185,12 @@ export function onAction(state, action, target) {
       const id = state.liveSnapshot.nodeNum != null
         ? (listLocalProfiles(state.store).find((p) => p.boundTo?.nodeNum === state.liveSnapshot.nodeNum)?.id ?? `snap-${Date.now()}`)
         : `snap-${Date.now()}`;
-      const label = state.connection?.bleDevice?.name ?? id;
+      const defaultLabel = state.connection?.bleDevice?.name ?? `Snapshot ${formatTimestamp(new Date().toISOString())}`;
+      const entered = prompt("Name this snapshot:", defaultLabel);
+      if (entered === null) return true; // cancelled
+      const label = entered.trim() || defaultLabel;
       state.store.snapshots[id] = { ...state.liveSnapshot, label };
-      state.ui.readMessage = `Saved snapshot "${label}" — pick "Another saved snapshot" under Compare against to use it.`;
+      state.ui.readMessage = `Saved snapshot "${label}" — pick "Another saved snapshot" under Compare against to use it, or rename/delete it from the Data tab.`;
       return true;
     }
     case "set-read-mode":
