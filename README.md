@@ -88,6 +88,11 @@ reference device however you configured it, then read+promote them like
 anything else), writing it to the rest of the fleet gives every unit the
 same known PIN, and you won't hit this again.
 
+Or skip Bluetooth pairing for this device entirely: **Connect via USB…**
+(top right) has none of the above — no OS-level bonding, no PIN, and it's
+the more reliable connection for the DFU/firmware-flash buttons on the
+Write tab too (see Workflow below).
+
 ## Workflow
 
 Typical loop, once per fleet-wide setting you care about:
@@ -120,15 +125,29 @@ Typical loop, once per fleet-wide setting you care about:
    which fields verified successfully. The Write tab is also where you
    rename or delete a global profile — there's no separate editor, just a
    read-only list of what it manages.
-6. **Factory reset** — at the bottom of the Write tab (only shown while
-   connected), a **Factory reset…** button erases the device's config,
-   channels, PKI keys and node data entirely (the firmware disables
-   Bluetooth and reboots immediately after, same as a fresh flash) —
-   asks for confirmation first, and the confirmation reminds you to
-   capture the device's private key via Read → Local identity first if
-   you haven't, since it can't be recovered afterward. Erasing the
-   device's own Bluetooth bonding keys along with everything else leaves
-   your OS holding a now-stale pairing, so reconnecting afterward
+6. **Enter DFU mode / flash firmware** — also at the bottom of the Write
+   tab, two buttons put the device into its bootloader for a firmware
+   flash: **Enter DFU mode…** sends Meshtastic's own admin command
+   (works on most hardware), and **Force DFU via USB (1200bps reset)…**
+   (only shown when connected over USB) does a low-level "1200bps touch"
+   reset instead — the same mechanism Meshtastic's own upload tooling
+   (`nrfutil`) uses, and more reliable on hardware/firmware combinations
+   where the admin command just reboots the device back into the app
+   instead of the bootloader (confirmed on some T1000-E units). If
+   neither works, the physical fallback is to hold the device's button
+   and plug in the USB cable twice in quick succession — the green LED
+   goes solid when it's worked. Either way, once in DFU mode a removable
+   drive (e.g. `T1000-E-BOOT`) appears for dragging a `.uf2` firmware
+   file onto.
+7. **Factory reset** — also at the bottom of the Write tab (only shown
+   while connected), a **Factory reset…** button erases the device's
+   config, channels, PKI keys and node data entirely (the firmware
+   disables Bluetooth and reboots immediately after, same as a fresh
+   flash) — asks for confirmation first, and the confirmation reminds
+   you to capture the device's private key via Read → Local identity
+   first if you haven't, since it can't be recovered afterward. Erasing
+   the device's own Bluetooth bonding keys along with everything else
+   leaves your OS holding a now-stale pairing, so reconnecting afterward
    typically fails until you remove/forget the device in your OS's
    Bluetooth settings and re-pair from scratch — MeshFleet can't do this
    itself (Web Bluetooth has no permission to touch OS-level pairings).
@@ -136,7 +155,7 @@ Typical loop, once per fleet-wide setting you care about:
    the command line; run it once with no arguments to preview what it'd
    remove, then again with `-Remove`. Or just reconnect over **USB**
    instead — it has no OS-level pairing to go stale in the first place.
-7. **Data** — export/import the whole store as JSON for backup, or to
+8. **Data** — export/import the whole store as JSON for backup, or to
    move your fleet setup to another machine/browser.
 
 ## Why writes are read-modify-write

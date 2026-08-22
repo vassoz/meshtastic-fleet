@@ -157,3 +157,30 @@ export async function disconnect(connection) {
     console.warn("Error while disconnecting", err);
   }
 }
+
+/**
+ * Performs a "1200bps touch" reset: reopen the port at 1200 baud and
+ * close it again, which the Adafruit nRF52 bootloader's USB CDC stack
+ * treats as a signal to reset into DFU (UF2) mode on its own -- the same
+ * mechanism nrfutil/PlatformIO use before a serial firmware upload
+ * (confirmed in the T1000-E's own board definition:
+ * "use_1200bps_touch": true). This is independent of Meshtastic's
+ * enterDfuModeRequest admin command (see MeshDevice.enterDfuMode() /
+ * writer.js's handleEnterDfuMode) -- confirmed in practice that some
+ * T1000-E firmware/bootloader combinations just reboot back into the
+ * app instead of the bootloader when sent that command, while this
+ * lower-level touch is what the device's own upload tooling relies on.
+ * Only meaningful for a "serial" connection; disconnects the Meshtastic
+ * session first so the port is free to reopen at a different baud rate.
+ */
+export async function triggerSerialDfuTouch(connection) {
+  if (connection?.kind !== "serial") {
+    throw new Error("The 1200bps DFU touch only applies to a USB serial connection.");
+  }
+  await disconnect(connection);
+  await new Promise((r) => setTimeout(r, 250)); // let the OS fully release the port first
+  const port = connection.port;
+  await port.open({ baudRate: 1200 });
+  await new Promise((r) => setTimeout(r, 100));
+  await port.close();
+}

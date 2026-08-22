@@ -59,8 +59,10 @@ export function render(state) {
 
 function renderDangerZone(state) {
   const name = connectionLabel(state.connection) ?? "this device";
+  const isSerial = state.connection?.kind === "serial";
   return `<div class="row-actions danger-zone danger-zone-top">
     <button type="button" data-action="enter-dfu-mode">Enter DFU mode…</button>
+    ${isSerial ? `<button type="button" data-action="force-usb-dfu-touch">Force DFU via USB (1200bps reset)…</button>` : ""}
     <button type="button" class="danger" data-action="factory-reset">Factory reset ${escapeHtml(name)}…</button>
   </div>`;
 }
@@ -212,10 +214,26 @@ export function onAction(state, action, target) {
         "This disconnects MeshFleet immediately. Nothing is erased, but the device stops acting as a normal " +
         "Meshtastic node until you either flash new firmware over it, or reset/power-cycle it back to normal " +
         "operation. Only do this if you're about to flash firmware.\n\n" +
+        "Note: on some T1000-E firmware/bootloader combinations this command just reboots the device back " +
+        "into the app instead of the bootloader. If that happens, reconnect via USB and use \"Force DFU via " +
+        "USB\" instead, or hold the device's button and plug in the USB cable twice quickly.\n\n" +
         "Continue?",
       );
       if (!confirmed) return true;
       return { asyncAction: "enter-dfu-mode" };
+    }
+    case "force-usb-dfu-touch": {
+      const confirmed = confirm(
+        "Force this device into its UF2 bootloader via a USB 1200bps reset?\n\n" +
+        "This is the same mechanism Meshtastic's own upload tooling uses, and is more reliable than " +
+        "\"Enter DFU mode\" on hardware/firmware where that admin command doesn't actually trigger the " +
+        "bootloader. This disconnects MeshFleet immediately -- nothing is erased. If it works, a removable " +
+        "drive (e.g. \"T1000-E-BOOT\") appears for dragging a .uf2 firmware file onto. Only do this if " +
+        "you're about to flash firmware.\n\n" +
+        "Continue?",
+      );
+      if (!confirmed) return true;
+      return { asyncAction: "force-usb-dfu-touch" };
     }
     default:
       return false;

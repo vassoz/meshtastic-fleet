@@ -14,7 +14,7 @@ import * as readView from "./ui/readView.js";
 import * as writeView from "./ui/writeView.js";
 import * as dataView from "./ui/dataView.js";
 import { Types } from "@meshtastic/core";
-import { connectNew, reconnect, connectNewSerial, reconnectSerial, connectionLabel, disconnect as bleDisconnect } from "./conn.js";
+import { connectNew, reconnect, connectNewSerial, reconnectSerial, connectionLabel, triggerSerialDfuTouch, disconnect as bleDisconnect } from "./conn.js";
 import { captureSnapshot } from "./snapshot.js";
 import { executeWritePlan, verifyWritePlan } from "./writer.js";
 import { generatePrivateKeyBase64 } from "./keys.js";
@@ -142,6 +142,9 @@ async function runAsyncAction(name, target) {
         break;
       case "enter-dfu-mode":
         await withTerminalConnectionStatus(handleEnterDfuMode);
+        break;
+      case "force-usb-dfu-touch":
+        await withTerminalConnectionStatus(handleForceUsbDfuTouch);
         break;
       default:
         console.warn("Unknown async action", name);
@@ -397,16 +400,21 @@ async function handleFactoryReset() {
 async function handleEnterDfuMode() {
   if (!state.connection) throw new Error("Not connected");
   state.ui.busy = true;
-  state.ui.busyMessage = "Entering DFU mode…";
+  state.ui.busyMessage = "Sending DFU-mode command…";
   renderApp();
 
-  // enterDfuMode() reboots straight into the nRF52 bootloader, which
-  // advertises as an entirely different BLE peripheral (Nordic DFU
-  // service, not Meshtastic's) -- there's nothing to reconnect to as a
-  // MeshDevice afterward, so this is treated the same as a manual
-  // disconnect, same as factory reset. Unlike factory reset, nothing on
-  // the device is erased, so there's no stale-OS-pairing concern here:
-  // the bootloader isn't the same advertised device the OS bonded with.
+  // enterDfuMode() *should* reboot straight into the nRF52 bootloader
+  // (which advertises as an entirely different BLE peripheral / a
+  // different USB device, not Meshtastic's) -- there's nothing to
+  // reconnect to as a MeshDevice afterward, so this is treated the same
+  // as a manual disconnect, same as factory reset. But confirmed in
+  // practice: on some T1000-E firmware/bootloader combinations, this
+  // admin command just reboots back into the normal app instead of
+  // engaging the bootloader -- the firmware source
+  // (platform/nrf52/main-nrf52.cpp's enterDfuMode()) does the right
+  // thing in principle, but whatever signals the bootloader to actually
+  // honor it isn't reliable on every unit. "Force DFU via USB" below is
+  // a more reliable fallback when connected by cable.
   try {
     await state.connection.device.enterDfuMode();
   } finally {
@@ -417,9 +425,38 @@ async function handleEnterDfuMode() {
     state.connectionStatus = "disconnected";
     state.ui.writePlan = null;
     state.ui.writeVerify = null;
-    state.ui.notice = "Device is now in DFU (bootloader) mode and disconnected from MeshFleet. " +
-      "It won't act as a normal Meshtastic node again until you flash new firmware over it, or " +
-      "reset/power-cycle it back to normal operation.";
+    state.ui.notice = "Sent the DFU-mode command and disconnected. If a removable drive (e.g. " +
+      "\"T1000-E-BOOT\") appeared in your file explorer, it worked -- drag a .uf2 firmware file onto it to " +
+      "flash. If the device just came back as a normal Meshtastic node instead, this admin command isn't " +
+      "taking effect on its firmware/bootloader -- reconnect via USB and use \"Force DFU via USB\" instead, " +
+      "or hold the device's button and plug in the USB cable twice quickly (the green LED goes solid when " +
+      "it works).";
+  }
+}
+
+async function handleForceUsbDfuTouch() {
+  if (!state.connection || state.connection.kind !== "serial") throw new Error("Not connected via USB.");
+  state.ui.busy = true;
+  state.ui.busyMessage = "Triggering bootloader reset (1200bps USB touch)…";
+  renderApp();
+
+  // triggerSerialDfuTouch() disconnects the port itself (it has to, to
+  // reopen at a different baud rate), so there's no separate disconnect
+  // step needed here -- just clean up state the same way as the other
+  // terminal (device-rebooting) actions.
+  try {
+    await triggerSerialDfuTouch(state.connection);
+  } finally {
+    watchConnection(null);
+    state.connection = null;
+    state.liveSnapshot = null;
+    state.connectionStatus = "disconnected";
+    state.ui.writePlan = null;
+    state.ui.writeVerify = null;
+    state.ui.notice = "Sent a 1200bps USB touch reset. If it worked, a removable drive (e.g. " +
+      "\"T1000-E-BOOT\") should appear in your file explorer within a few seconds -- drag a .uf2 firmware " +
+      "file onto it to flash. If no drive appears, use the physical method instead: hold the device's " +
+      "button and plug in the USB cable twice in quick succession (the green LED goes solid when it works).";
   }
 }
 
