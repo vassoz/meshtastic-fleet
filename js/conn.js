@@ -1,4 +1,7 @@
-// Web Bluetooth connection management.
+// Bluetooth and USB serial connection management. Both transports produce
+// the same shape -- { kind, transport, device, ...transport-specific ref }
+// -- so the rest of the app (main.js's reconnect/capture logic) can stay
+// mostly transport-agnostic; only connectNew*()/reconnect*() differ.
 //
 // TransportWebBluetooth.create() (the one-shot helper) internally does
 // `navigator.bluetooth.requestDevice(...)` and never hands back the
@@ -10,9 +13,30 @@
 // hold a stable reference to the BluetoothDevice.
 import { MeshDevice } from "@meshtastic/core";
 import { TransportWebBluetooth } from "@meshtastic/transport-web-bluetooth";
+import { TransportWebSerial } from "@meshtastic/transport-web-serial";
 
 export function bluetoothAvailable() {
   return typeof navigator !== "undefined" && "bluetooth" in navigator;
+}
+
+// Web Serial (unlike Web Bluetooth) is desktop-Chromium-only -- not
+// implemented on Android Chrome, Firefox, or Safari.
+export function serialAvailable() {
+  return typeof navigator !== "undefined" && "serial" in navigator;
+}
+
+/** A short label for the connection indicator / fleet-card "last connection"
+ * field. Serial ports have no user-facing name in the Web Serial API (only
+ * USB vendor/product IDs via getInfo()), unlike a BLE device's advertised
+ * name. */
+export function connectionLabel(connection) {
+  if (!connection) return null;
+  if (connection.kind === "serial") {
+    const info = connection.port.getInfo?.() ?? {};
+    const hex = (n) => (n != null ? n.toString(16).padStart(4, "0") : "????");
+    return `USB serial (${hex(info.usbVendorId)}:${hex(info.usbProductId)})`;
+  }
+  return connection.bleDevice?.name ?? null;
 }
 
 /** Chromium's persisted-permissions API (chrome://flags/#enable-web-bluetooth-new-permissions-backend
@@ -22,11 +46,18 @@ export function persistedPermissionsAvailable() {
   return bluetoothAvailable() && typeof navigator.bluetooth.getDevices === "function";
 }
 
-/** { bleDevice, transport, device } */
+/** { kind: "ble", bleDevice, transport, device } */
 async function fromBleDevice(bleDevice) {
   const transport = await TransportWebBluetooth.createFromDevice(bleDevice);
   const device = new MeshDevice(transport);
-  return { bleDevice, transport, device };
+  return { kind: "ble", bleDevice, transport, device };
+}
+
+/** { kind: "serial", port, transport, device } */
+async function fromSerialPort(port) {
+  const transport = await TransportWebSerial.createFromPort(port);
+  const device = new MeshDevice(transport);
+  return { kind: "serial", port, transport, device };
 }
 
 /** Prompts the browser's device picker (filtered to the Meshtastic BLE
@@ -54,6 +85,40 @@ export async function reconnect(bleDevice, { retries = 8, delayMs = 1500, onAtte
     onAttempt?.(attempt, retries);
     try {
       return await fromBleDevice(bleDevice);
+    } catch (err) {
+      lastErr = err;
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+  throw lastErr ?? new Error("Reconnect failed");
+}
+
+/** Prompts the browser's serial port picker and connects. No vendor/product
+ * filter: Meshtastic hardware spans many different USB-serial chips
+ * (native USB CDC, CP210x, CH9102, ...) with no single ID to filter on,
+ * unlike Bluetooth's GATT service UUID -- so this leaves the choice to the
+ * user, same as picking a port in any serial terminal. Must be called from
+ * a user gesture (a click handler), per the Web Serial spec. */
+export async function connectNewSerial() {
+  if (!serialAvailable()) {
+    throw new Error("Web Serial isn't available in this browser. Use Chrome or Edge on desktop.");
+  }
+  const port = await navigator.serial.requestPort();
+  return fromSerialPort(port);
+}
+
+/**
+ * Reconnect to a SerialPort object already held from earlier in this page
+ * session (e.g. the same port connectNewSerial() returned before a write
+ * that triggered a reboot). Retries because the device is briefly
+ * unreachable while it reboots -- mirrors reconnect()'s BLE retry loop.
+ */
+export async function reconnectSerial(port, { retries = 8, delayMs = 1500, onAttempt } = {}) {
+  let lastErr;
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    onAttempt?.(attempt, retries);
+    try {
+      return await fromSerialPort(port);
     } catch (err) {
       lastErr = err;
       await new Promise((r) => setTimeout(r, delayMs));

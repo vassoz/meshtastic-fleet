@@ -16,6 +16,7 @@ import {
 } from "../profiles.js";
 import { formatValue } from "./fields.js";
 import { escapeHtml, formatTimestamp } from "../util.js";
+import { connectionLabel } from "../conn.js";
 
 export function render(state) {
   if (state.connectionStatus !== "connected") {
@@ -187,7 +188,7 @@ export function onAction(state, action, target) {
       const id = state.liveSnapshot.nodeNum != null
         ? (listLocalProfiles(state.store).find((p) => p.boundTo?.nodeNum === state.liveSnapshot.nodeNum)?.id ?? `snap-${Date.now()}`)
         : `snap-${Date.now()}`;
-      const defaultLabel = state.connection?.bleDevice?.name ?? `Snapshot ${formatTimestamp(new Date().toISOString())}`;
+      const defaultLabel = connectionLabel(state.connection) ?? `Snapshot ${formatTimestamp(new Date().toISOString())}`;
       const entered = prompt("Name this snapshot:", defaultLabel);
       if (entered === null) return true; // cancelled
       const label = entered.trim() || defaultLabel;
@@ -279,7 +280,7 @@ export function onAction(state, action, target) {
       };
       if (snap.config?.security?.privateKey) profile.security.privateKey = snap.config.security.privateKey;
       profile.security.publicKey = snap.owner?.publicKey ?? snap.config?.security?.publicKey ?? "";
-      profile.boundTo = { nodeNum: snap.nodeNum, bleName: state.connection?.bleDevice?.name ?? null, hwModel: snap.hwModel ?? null };
+      profile.boundTo = { nodeNum: snap.nodeNum, bleName: connectionLabel(state.connection), hwModel: snap.hwModel ?? null };
       touch(profile);
       upsertLocalProfile(state.store, profile);
       state.ui.selectedLocalId = profile.id;

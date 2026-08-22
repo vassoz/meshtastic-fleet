@@ -6,6 +6,7 @@ import { listGlobalProfiles, listLocalProfiles, upsertGlobalProfile, deleteGloba
 import { buildWritePlan } from "../writer.js";
 import { escapeHtml, getPath } from "../util.js";
 import { formatValue } from "./fields.js";
+import { connectionLabel } from "../conn.js";
 
 export function render(state) {
   if (state.connectionStatus !== "connected" || !state.liveSnapshot) {
@@ -57,7 +58,7 @@ export function render(state) {
 }
 
 function renderDangerZone(state) {
-  const name = state.connection?.bleDevice?.name ?? "this device";
+  const name = connectionLabel(state.connection) ?? "this device";
   return `<div class="row-actions danger-zone danger-zone-top">
     <button type="button" data-action="enter-dfu-mode">Enter DFU mode…</button>
     <button type="button" class="danger" data-action="factory-reset">Factory reset ${escapeHtml(name)}…</button>
@@ -193,7 +194,7 @@ export function onAction(state, action, target) {
       return true;
     }
     case "factory-reset": {
-      const name = state.connection?.bleDevice?.name ?? "this device";
+      const name = connectionLabel(state.connection) ?? "this device";
       const confirmed = confirm(
         `Factory reset ${name}?\n\n` +
         "This erases ALL configuration, channels, PKI keys, and node data, and cannot be undone -- the device " +
@@ -205,7 +206,7 @@ export function onAction(state, action, target) {
       return { asyncAction: "factory-reset" };
     }
     case "enter-dfu-mode": {
-      const name = state.connection?.bleDevice?.name ?? "this device";
+      const name = connectionLabel(state.connection) ?? "this device";
       const confirmed = confirm(
         `Put ${name} into DFU (bootloader) mode?\n\n` +
         "This disconnects MeshFleet immediately. Nothing is erased, but the device stops acting as a normal " +

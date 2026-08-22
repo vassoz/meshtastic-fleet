@@ -8,8 +8,8 @@ to pull a newer release.
 
 Sources:
   - npm tarballs for @meshtastic/core, @meshtastic/transport-web-bluetooth,
-    @bufbuild/protobuf, crc  (downloaded straight from registry.npmjs.org,
-    no npm/node required)
+    @meshtastic/transport-web-serial, @bufbuild/protobuf, crc  (downloaded
+    straight from registry.npmjs.org, no npm/node required)
   - esm.sh's `unenv` browser polyfills for the three bare Node builtins
     (os, path, util) that @meshtastic/core's published bundle imports.
     Only 6 files / ~15 KB are needed for os+path+util; verified by
@@ -33,6 +33,7 @@ VENDOR = ROOT / "vendor"
 PINNED_VERSIONS = {
     "@meshtastic/core": "2.6.7",
     "@meshtastic/transport-web-bluetooth": "0.1.5",
+    "@meshtastic/transport-web-serial": "0.2.5",
     "@bufbuild/protobuf": "2.12.1",
     "crc": "4.3.2",
 }
@@ -99,6 +100,14 @@ def vendor_transport_web_bluetooth() -> None:
     version = PINNED_VERSIONS["@meshtastic/transport-web-bluetooth"]
     tf = download_npm_package("@meshtastic/transport-web-bluetooth", version)
     dest = VENDOR / "meshtastic-transport-web-bluetooth"
+    files = extract_matching(tf, "dist/", dest)
+    log(f"  -> {len(files)} file(s) in {dest.relative_to(ROOT)}")
+
+
+def vendor_transport_web_serial() -> None:
+    version = PINNED_VERSIONS["@meshtastic/transport-web-serial"]
+    tf = download_npm_package("@meshtastic/transport-web-serial", version)
+    dest = VENDOR / "meshtastic-transport-web-serial"
     files = extract_matching(tf, "dist/", dest)
     log(f"  -> {len(files)} file(s) in {dest.relative_to(ROOT)}")
 
@@ -234,6 +243,7 @@ def main() -> None:
     VENDOR.mkdir(exist_ok=True)
     vendor_meshtastic_core()
     vendor_transport_web_bluetooth()
+    vendor_transport_web_serial()
     vendor_bufbuild_protobuf()
     vendor_crc()
     vendor_node_polyfills()

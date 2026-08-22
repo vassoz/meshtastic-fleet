@@ -14,7 +14,7 @@ import * as readView from "./ui/readView.js";
 import * as writeView from "./ui/writeView.js";
 import * as dataView from "./ui/dataView.js";
 import { Types } from "@meshtastic/core";
-import { connectNew, reconnect, disconnect as bleDisconnect } from "./conn.js";
+import { connectNew, reconnect, connectNewSerial, reconnectSerial, connectionLabel, disconnect as bleDisconnect } from "./conn.js";
 import { captureSnapshot } from "./snapshot.js";
 import { executeWritePlan, verifyWritePlan } from "./writer.js";
 import { generatePrivateKeyBase64 } from "./keys.js";
@@ -31,7 +31,7 @@ const routeModules = {
 const state = {
   store: storage.load(),
   route: "fleet",
-  connection: null, // { bleDevice, transport, device } | null
+  connection: null, // { kind: "ble", bleDevice, transport, device } | { kind: "serial", port, transport, device } | null
   connectionStatus: "disconnected", // disconnected|connecting|configuring|connected|reconnecting
   liveSnapshot: null,
   ui: {
@@ -120,7 +120,10 @@ async function runAsyncAction(name, target) {
   try {
     switch (name) {
       case "connect-new":
-        await withTerminalConnectionStatus(handleConnectNew);
+        await withTerminalConnectionStatus(handleConnectNewBle);
+        break;
+      case "connect-new-serial":
+        await withTerminalConnectionStatus(handleConnectNewSerial);
         break;
       case "disconnect":
         await handleDisconnect();
@@ -249,18 +252,28 @@ const CONFIGURE_RETRY_DELAY_MS = 2000;
 const RECONNECT_SUB_RETRIES = 4;
 const RECONNECT_SUB_DELAY_MS = 1500;
 
-async function captureWithRetry(bleDevice, { freshConnection } = {}) {
+// connRef carries whatever reconnect() needs to retry against the *same*
+// physical connection -- a BluetoothDevice for kind "ble", a SerialPort for
+// kind "serial" -- so this stays a single retry loop for both transports;
+// only the messaging (BLE bonding/PIN prompts don't apply to serial) and
+// the underlying reconnect call branch on connRef.kind.
+async function captureWithRetry(connRef, { freshConnection } = {}) {
+  const isSerial = connRef.kind === "serial";
   let connection = freshConnection ?? null;
   let lastErr;
   for (let attempt = 1; attempt <= CONFIGURE_MAX_ATTEMPTS; attempt++) {
     try {
       if (!connection) {
-        state.ui.busyMessage = attempt === 1
-          ? "Connecting… if your device or OS shows a Bluetooth pairing/PIN prompt, accept it."
-          : `Reconnecting (attempt ${attempt}/${CONFIGURE_MAX_ATTEMPTS})… if a pairing prompt appeared, accept it -- this will keep retrying.`;
+        state.ui.busyMessage = isSerial
+          ? (attempt === 1 ? "Connecting…" : `Reconnecting (attempt ${attempt}/${CONFIGURE_MAX_ATTEMPTS})…`)
+          : (attempt === 1
+            ? "Connecting… if your device or OS shows a Bluetooth pairing/PIN prompt, accept it."
+            : `Reconnecting (attempt ${attempt}/${CONFIGURE_MAX_ATTEMPTS})… if a pairing prompt appeared, accept it -- this will keep retrying.`);
         state.connectionStatus = "connecting";
         renderApp();
-        connection = await reconnect(bleDevice, { retries: RECONNECT_SUB_RETRIES, delayMs: RECONNECT_SUB_DELAY_MS });
+        connection = isSerial
+          ? await reconnectSerial(connRef.port, { retries: RECONNECT_SUB_RETRIES, delayMs: RECONNECT_SUB_DELAY_MS })
+          : await reconnect(connRef.bleDevice, { retries: RECONNECT_SUB_RETRIES, delayMs: RECONNECT_SUB_DELAY_MS });
       }
       state.connection = connection;
       watchConnection(connection);
@@ -272,14 +285,23 @@ async function captureWithRetry(bleDevice, { freshConnection } = {}) {
     } catch (err) {
       lastErr = err;
       console.warn(`Connect/configure attempt ${attempt}/${CONFIGURE_MAX_ATTEMPTS} failed`, err);
-      connection = null; // discard the broken transport; force a fresh GATT connect next attempt
+      connection = null; // discard the broken transport; force a fresh connect next attempt
       if (attempt < CONFIGURE_MAX_ATTEMPTS) {
-        state.ui.busyMessage = `Connection dropped, retrying (${attempt}/${CONFIGURE_MAX_ATTEMPTS})… ` +
-          "if this is the first time connecting to this device, watch for a pairing/PIN prompt.";
+        state.ui.busyMessage = isSerial
+          ? `Connection dropped, retrying (${attempt}/${CONFIGURE_MAX_ATTEMPTS})…`
+          : `Connection dropped, retrying (${attempt}/${CONFIGURE_MAX_ATTEMPTS})… ` +
+            "if this is the first time connecting to this device, watch for a pairing/PIN prompt.";
         renderApp();
         await new Promise((resolve) => setTimeout(resolve, CONFIGURE_RETRY_DELAY_MS));
       }
     }
+  }
+  if (isSerial) {
+    throw new Error(
+      `Could not read the device after ${CONFIGURE_MAX_ATTEMPTS} attempts (${lastErr?.message ?? lastErr}). ` +
+      "Check the device is powered on and the USB cable carries data (not power-only), and that no other " +
+      "program (a serial monitor, the Meshtastic CLI, etc.) already has the port open.",
+    );
   }
   throw new Error(
     `Could not read the device after ${CONFIGURE_MAX_ATTEMPTS} attempts (${lastErr?.message ?? lastErr}). ` +
@@ -291,25 +313,33 @@ async function captureWithRetry(bleDevice, { freshConnection } = {}) {
   );
 }
 
-async function handleConnectNew() {
+async function handleConnectNewVia(connectFn) {
   state.ui.busy = true;
   state.ui.busyMessage = "Waiting for device selection…";
   state.connectionStatus = "connecting";
   renderApp();
 
-  const initial = await connectNew(); // requestDevice() picker: must run from this click's user gesture
+  const initial = await connectFn(); // requestDevice()/requestPort() picker: must run from this click's user gesture
   state.liveSnapshot = null;
 
-  const { connection, snap } = await captureWithRetry(initial.bleDevice, { freshConnection: initial });
+  const { connection, snap } = await captureWithRetry(initial, { freshConnection: initial });
   state.connection = connection;
   state.liveSnapshot = snap;
   state.connectionStatus = "connected";
 
   const bound = listLocalProfiles(state.store).find((p) => p.boundTo?.nodeNum === snap.nodeNum);
   if (bound) {
-    bound.boundTo = { nodeNum: snap.nodeNum, bleName: connection.bleDevice?.name ?? null, hwModel: snap.hwModel ?? null };
+    bound.boundTo = { nodeNum: snap.nodeNum, bleName: connectionLabel(connection), hwModel: snap.hwModel ?? null };
     upsertLocalProfile(state.store, bound);
   }
+}
+
+function handleConnectNewBle() {
+  return handleConnectNewVia(connectNew);
+}
+
+function handleConnectNewSerial() {
+  return handleConnectNewVia(connectNewSerial);
 }
 
 async function handleDisconnect() {
@@ -397,7 +427,7 @@ async function handleRecapture() {
   if (!state.connection) throw new Error("Not connected");
   state.ui.busy = true;
   renderApp();
-  const { connection, snap } = await captureWithRetry(state.connection.bleDevice, { freshConnection: state.connection });
+  const { connection, snap } = await captureWithRetry(state.connection, { freshConnection: state.connection });
   state.connection = connection;
   state.liveSnapshot = snap;
   state.connectionStatus = "connected";
@@ -436,8 +466,8 @@ async function handleExecuteWrite() {
   await new Promise((resolve) => setTimeout(resolve, rebootWaitMs));
 
   log("Reconnecting…");
-  const bleDeviceRef = state.connection.bleDevice;
-  const { connection: newConnection, snap: postSnap } = await captureWithRetry(bleDeviceRef);
+  const connRef = state.connection;
+  const { connection: newConnection, snap: postSnap } = await captureWithRetry(connRef);
   state.connection = newConnection;
   state.liveSnapshot = postSnap;
   state.connectionStatus = "connected";
@@ -448,8 +478,9 @@ async function handleExecuteWrite() {
 
   const bound = listLocalProfiles(state.store).find((p) => p.boundTo?.nodeNum === postSnap.nodeNum);
   if (bound) {
-    state.store.snapshots[bound.id] = { ...postSnap, label: newConnection.bleDevice?.name ?? bound.label };
-    bound.boundTo = { nodeNum: postSnap.nodeNum, bleName: newConnection.bleDevice?.name ?? null, hwModel: postSnap.hwModel ?? null };
+    const label = connectionLabel(newConnection);
+    state.store.snapshots[bound.id] = { ...postSnap, label: label ?? bound.label };
+    bound.boundTo = { nodeNum: postSnap.nodeNum, bleName: label, hwModel: postSnap.hwModel ?? null };
     upsertLocalProfile(state.store, bound);
   }
 }

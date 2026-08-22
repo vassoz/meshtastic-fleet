@@ -1,8 +1,8 @@
 # MeshFleet
 
 A local, zero-build web app for provisioning a fleet of Meshtastic devices
-(built for 6× SenseCAP Card Tracker T1000-E) over Web Bluetooth. It splits
-configuration into two axes:
+(built for 6× SenseCAP Card Tracker T1000-E) over Web Bluetooth or USB
+(Web Serial). It splits configuration into two axes:
 
 - **Global profiles** — fleet-wide policy: channels + PSKs, LoRa region/
   preset, GPS/position behaviour, telemetry intervals, security policy.
@@ -30,8 +30,13 @@ nothing leaves your machine.
 
 ## Requirements
 
-- **Chrome or Edge**, desktop or Android. Web Bluetooth isn't implemented
-  in Firefox or Safari — the app will tell you if it's missing.
+- **Chrome or Edge**, desktop or Android, for the **Bluetooth** connection.
+  Neither Firefox nor Safari implements Web Bluetooth — the app will tell
+  you if it's missing.
+- **Chrome or Edge on desktop** for the **USB** connection. Web Serial is
+  desktop-Chromium-only — not implemented on Android Chrome, Firefox, or
+  Safari. USB also sidesteps Bluetooth pairing entirely, which is
+  particularly handy right after a factory reset (see below).
 - **Python 3** (only used to vendor dependencies once and to serve static
   files — no Node/npm needed, no build step).
 
@@ -129,7 +134,8 @@ Typical loop, once per fleet-wide setting you care about:
    itself (Web Bluetooth has no permission to touch OS-level pairings).
    On Windows, `tools/windows-unpair-bluetooth.ps1` does the removal from
    the command line; run it once with no arguments to preview what it'd
-   remove, then again with `-Remove`.
+   remove, then again with `-Remove`. Or just reconnect over **USB**
+   instead — it has no OS-level pairing to go stale in the first place.
 7. **Data** — export/import the whole store as JSON for backup, or to
    move your fleet setup to another machine/browser.
 
@@ -165,7 +171,7 @@ serve.sh               python3 -m http.server 8080
 tools/vendor.py        one-shot dependency vendoring (re-runnable)
 js/
   main.js               composition root: app state, rendering, event wiring
-  conn.js                Web Bluetooth connect/reconnect
+  conn.js                Bluetooth + USB serial connect/reconnect
   snapshot.js             configure() -> full DeviceSnapshot capture
   schema.js               protobuf descriptor reflection helpers
   defaults.js              firmware zero-value baseline + a few annotated defaults
@@ -181,9 +187,10 @@ vendor/                 dependency closure fetched by tools/vendor.py (checked i
 
 ## Pinned versions / known limitation
 
-`@meshtastic/core@2.6.7` and `@meshtastic/transport-web-bluetooth@0.1.5`
-(the latest versions published to npm at the time this was built) bundle
-`@meshtastic/protobufs` at a specific version. If your device's firmware
-is newer and has added fields to a config section, those specific new
-fields won't have editable UI here (older/unknown fields elsewhere still
-round-trip fine). Fix: bump the pinned protobufs dependency and re-vendor.
+`@meshtastic/core@2.6.7`, `@meshtastic/transport-web-bluetooth@0.1.5`, and
+`@meshtastic/transport-web-serial@0.2.5` (the latest versions published to
+npm at the time this was built) bundle `@meshtastic/protobufs` at a
+specific version. If your device's firmware is newer and has added fields
+to a config section, those specific new fields won't have editable UI
+here (older/unknown fields elsewhere still round-trip fine). Fix: bump
+the pinned protobufs dependency and re-vendor.

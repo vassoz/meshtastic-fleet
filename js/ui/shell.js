@@ -10,7 +10,7 @@
 // profiles are built exclusively by reading a reference device (Read tab)
 // and promoting the specific fields you want to keep -- see readView.js.
 import { escapeHtml, formatTimestamp } from "../util.js";
-import { bluetoothAvailable } from "../conn.js";
+import { bluetoothAvailable, serialAvailable, connectionLabel } from "../conn.js";
 
 const TABS = [
   { route: "fleet", label: "Fleet" },
@@ -33,13 +33,14 @@ export function renderHeader(state) {
   </header>
   ${state.ui.error ? `<div class="banner error">${escapeHtml(state.ui.error)} <button type="button" data-action="dismiss-error">×</button></div>` : ""}
   ${state.ui.notice ? `<div class="banner warn">${escapeHtml(state.ui.notice)} <button type="button" data-action="dismiss-notice">×</button></div>` : ""}
-  ${!bluetoothAvailable() ? `<div class="banner warn">Web Bluetooth isn't available in this browser. Use Chrome or Edge on desktop, or Chrome on Android.</div>` : ""}`;
+  ${!bluetoothAvailable() && !serialAvailable() ? `<div class="banner warn">Neither Web Bluetooth nor Web Serial is available in this browser. ` +
+    `Use Chrome or Edge -- desktop for USB, desktop or Android for Bluetooth.</div>` : ""}`;
 }
 
 function renderConnectionIndicator(state) {
   const status = state.connectionStatus;
   if (status === "connected") {
-    const name = state.connection?.bleDevice?.name ?? "device";
+    const name = connectionLabel(state.connection) ?? "device";
     const node = state.liveSnapshot?.nodeNum != null ? ` #${state.liveSnapshot.nodeNum}` : "";
     return `<span class="dot ok"></span> Connected: ${escapeHtml(name)}${node}
       <button type="button" data-action="disconnect">Disconnect</button>`;
@@ -48,7 +49,8 @@ function renderConnectionIndicator(state) {
     return `<span class="dot busy"></span> ${escapeHtml(state.ui.busyMessage || status)}…`;
   }
   return `<span class="dot off"></span> Not connected
-    <button type="button" data-action="connect-new">Connect device…</button>`;
+    ${bluetoothAvailable() ? `<button type="button" data-action="connect-new">Connect via Bluetooth…</button>` : ""}
+    ${serialAvailable() ? `<button type="button" data-action="connect-new-serial">Connect via USB…</button>` : ""}`;
 }
 
 export function onAction(state, action, target) {
@@ -65,6 +67,8 @@ export function onAction(state, action, target) {
       return true;
     case "connect-new":
       return { asyncAction: "connect-new" };
+    case "connect-new-serial":
+      return { asyncAction: "connect-new-serial" };
     case "disconnect":
       return { asyncAction: "disconnect" };
     default:

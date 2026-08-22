@@ -4,6 +4,7 @@
 // device be bound to one.
 import { listLocalProfiles, newLocalProfile, upsertLocalProfile } from "../profiles.js";
 import { escapeHtml, formatTimestamp } from "../util.js";
+import { connectionLabel } from "../conn.js";
 
 export function render(state) {
   const { store } = state;
@@ -34,7 +35,7 @@ function renderCard(state, profile) {
     <h3>${escapeHtml(profile.label)}</h3>
     <dl>
       <dt>Node</dt><dd>${profile.boundTo ? `#${profile.boundTo.nodeNum} (${escapeHtml(profile.boundTo.hwModel ?? "?")})` : "unbound"}</dd>
-      <dt>BLE name</dt><dd>${profile.boundTo?.bleName ? escapeHtml(profile.boundTo.bleName) : "—"}</dd>
+      <dt>Connection</dt><dd>${profile.boundTo?.bleName ? escapeHtml(profile.boundTo.bleName) : "—"}</dd>
       <dt>Short name</dt><dd>${escapeHtml(profile.owner.shortName || "—")}</dd>
       <dt>Last read</dt><dd>${formatTimestamp(snapshot?.capturedAt)}</dd>
       <dt>Firmware</dt><dd>${escapeHtml(snapshot?.firmwareVersion || "—")}</dd>
@@ -61,7 +62,7 @@ export function onAction(state, action, target) {
       if (profile && state.liveSnapshot) {
         profile.boundTo = {
           nodeNum: state.liveSnapshot.nodeNum,
-          bleName: state.connection?.bleDevice?.name ?? null,
+          bleName: connectionLabel(state.connection),
           hwModel: state.liveSnapshot.hwModel ?? null,
         };
         upsertLocalProfile(state.store, profile);
