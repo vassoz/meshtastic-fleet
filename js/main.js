@@ -36,6 +36,7 @@ const state = {
   liveSnapshot: null,
   ui: {
     error: null,
+    notice: null,
     busy: false,
     busyMessage: "",
     selectedLocalId: null,
@@ -343,6 +344,20 @@ async function handleFactoryReset() {
     state.connectionStatus = "disconnected";
     state.ui.writePlan = null;
     state.ui.writeVerify = null;
+    // Erasing "node data entirely" (see the Write tab's confirm text) wipes
+    // the nRF52's own Bluetooth bonding keys along with everything else --
+    // but the OS's side of that bond is untouched, so the two are now
+    // mismatched. The device won't respond to the stale bond, and the OS
+    // won't automatically renegotiate a new one; it just fails to
+    // reconnect until the device is removed/forgotten from the OS's
+    // Bluetooth settings and re-paired from scratch. Nothing in Web
+    // Bluetooth's API lets a page do that removal itself (deliberately --
+    // it would let any site silently drop a user's unrelated pairings), so
+    // this can only be surfaced as guidance, not automated away.
+    state.ui.notice = "Factory reset complete. If reconnecting fails, this device's Bluetooth pairing " +
+      "is likely stale (the firmware wiped its own bonding info, but your OS didn't) -- remove/forget it in " +
+      "your OS's Bluetooth settings, then reconnect to re-pair from scratch. On Windows, " +
+      "tools/windows-unpair-bluetooth.ps1 in this repo does that from the command line.";
   }
 }
 

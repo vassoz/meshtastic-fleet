@@ -32,6 +32,7 @@ export function renderHeader(state) {
     <div class="conn-indicator">${conn}</div>
   </header>
   ${state.ui.error ? `<div class="banner error">${escapeHtml(state.ui.error)} <button type="button" data-action="dismiss-error">×</button></div>` : ""}
+  ${state.ui.notice ? `<div class="banner warn">${escapeHtml(state.ui.notice)} <button type="button" data-action="dismiss-notice">×</button></div>` : ""}
   ${!bluetoothAvailable() ? `<div class="banner warn">Web Bluetooth isn't available in this browser. Use Chrome or Edge on desktop, or Chrome on Android.</div>` : ""}`;
 }
 
@@ -58,6 +59,9 @@ export function onAction(state, action, target) {
       return true;
     case "dismiss-error":
       state.ui.error = null;
+      return true;
+    case "dismiss-notice":
+      state.ui.notice = null;
       return true;
     case "connect-new":
       return { asyncAction: "connect-new" };

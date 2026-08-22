@@ -121,7 +121,15 @@ Typical loop, once per fleet-wide setting you care about:
    Bluetooth and reboots immediately after, same as a fresh flash) —
    asks for confirmation first, and the confirmation reminds you to
    capture the device's private key via Read → Local identity first if
-   you haven't, since it can't be recovered afterward.
+   you haven't, since it can't be recovered afterward. Erasing the
+   device's own Bluetooth bonding keys along with everything else leaves
+   your OS holding a now-stale pairing, so reconnecting afterward
+   typically fails until you remove/forget the device in your OS's
+   Bluetooth settings and re-pair from scratch — MeshFleet can't do this
+   itself (Web Bluetooth has no permission to touch OS-level pairings).
+   On Windows, `tools/windows-unpair-bluetooth.ps1` does the removal from
+   the command line; run it once with no arguments to preview what it'd
+   remove, then again with `-Remove`.
 7. **Data** — export/import the whole store as JSON for backup, or to
    move your fleet setup to another machine/browser.
 
