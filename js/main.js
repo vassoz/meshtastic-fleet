@@ -41,6 +41,7 @@ const state = {
     selectedLocalId: null,
     revealedSecrets: new Set(),
     readMode: "global",
+    readMessage: "",
     readBaselineMode: "defaults",
     readBaselineId: null,
     selectedDiffRows: new Set(),

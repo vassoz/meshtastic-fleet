@@ -44,6 +44,7 @@ export function render(state) {
       <button type="button" class="section-tab${mode === "global" ? " active" : ""}" data-action="set-read-mode" data-mode="global">Global config diff</button>
       <button type="button" class="section-tab${mode === "local" ? " active" : ""}" data-action="set-read-mode" data-mode="local">Local identity</button>
     </div>
+    ${state.ui.readMessage ? `<p class="muted">${escapeHtml(state.ui.readMessage)}</p>` : ""}
     ${mode === "global" ? renderGlobalDiff(state) : renderLocalRead(state)}
   </section>`;
 }
@@ -184,7 +185,9 @@ export function onAction(state, action, target) {
       const id = state.liveSnapshot.nodeNum != null
         ? (listLocalProfiles(state.store).find((p) => p.boundTo?.nodeNum === state.liveSnapshot.nodeNum)?.id ?? `snap-${Date.now()}`)
         : `snap-${Date.now()}`;
-      state.store.snapshots[id] = { ...state.liveSnapshot, label: state.connection?.bleDevice?.name ?? id };
+      const label = state.connection?.bleDevice?.name ?? id;
+      state.store.snapshots[id] = { ...state.liveSnapshot, label };
+      state.ui.readMessage = `Saved snapshot "${label}" — pick "Another saved snapshot" under Compare against to use it.`;
       return true;
     }
     case "set-read-mode":
