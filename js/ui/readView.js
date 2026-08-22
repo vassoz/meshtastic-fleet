@@ -84,7 +84,9 @@ function renderGlobalDiff(state) {
   const allRows = [...rows, ...channelRows];
 
   const globalProfiles = listGlobalProfiles(state.store);
-  const snapshots = Object.entries(state.store.snapshots).map(([id, s]) => ({ id, ...s }));
+  const snapshots = Object.entries(state.store.snapshots)
+    .map(([id, s]) => ({ id, ...s }))
+    .sort((a, b) => (b.capturedAt ?? "").localeCompare(a.capturedAt ?? ""));
 
   const baselinePicker = `
     <label class="row inline">Compare against
