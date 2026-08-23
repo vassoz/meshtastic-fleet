@@ -124,26 +124,16 @@ Typical loop, once per fleet-wide setting you care about:
    **Build plan** (always diffed against a fresh read of *this* device,
    never a stale snapshot), review exactly what will change, confirm. The
    device reboots once; the app reconnects automatically and reports
-   which fields verified successfully. The Write tab is also where you
-   rename or delete a global profile — there's no separate editor, just a
-   read-only list of what it manages.
+   which fields verified successfully.
 
-   For a fresh or reused device, check **Factory reset first** before
-   clicking **Build plan**: it erases the device completely, reboots,
-   reconnects, and *then* builds the plan against that reset
-   (firmware-default) state — still stopping to let you review it before
-   anything is written, same as a normal write. One click instead of a
-   separate factory reset followed by a second write pass.
-
-   Reconnecting after any reboot (a normal write, a factory reset, or
-   this combined flow) can occasionally fail to find the device again —
-   over USB it may have re-enumerated as a different port, or over
-   Bluetooth the pairing may have gone stale (see "First connection to a
-   T1000-E" above). MeshFleet retries for a while on its own, but if
-   it's taking too long, click **Cancel** next to the spinner in the
-   header to give up on it immediately and go straight back to a normal
-   **Connect via Bluetooth…**/**Connect via USB…** — no page reload
-   needed.
+   Reconnecting after any reboot (a write, a factory reset, DFU, ...) can
+   occasionally fail to find the device again — over USB it may have
+   re-enumerated as a different port, or over Bluetooth the pairing may
+   have gone stale (see "First connection to a T1000-E" above).
+   MeshFleet retries for a while on its own, but if it's taking too
+   long, click **Cancel** next to the spinner in the header to give up
+   on it immediately and go straight back to a normal **Connect via
+   Bluetooth…**/**Connect via USB…** — no page reload needed.
 6. **Enter DFU mode / flash firmware** — also at the bottom of the Write
    tab, two buttons put the device into its bootloader for a firmware
    flash: **Enter DFU mode…** sends Meshtastic's own admin command
@@ -175,7 +165,11 @@ Typical loop, once per fleet-wide setting you care about:
    remove, then again with `-Remove`. Or just reconnect over **USB**
    instead — it has no OS-level pairing to go stale in the first place.
 8. **Data** — export/import the whole store as JSON for backup, or to
-   move your fleet setup to another machine/browser.
+   move your fleet setup to another machine/browser. Also the one place
+   to rename or delete a global profile (there's no separate editor,
+   just a read-only list of what each one manages) and to rename or
+   delete a saved snapshot — unlike Read/Write, this tab doesn't need a
+   connected device, so it's reachable any time.
 
 ## Why writes are read-modify-write
 

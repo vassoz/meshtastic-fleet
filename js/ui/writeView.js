@@ -2,9 +2,9 @@
 // (already diffed against a fresh read of the connected device -- see
 // writer.js), confirm, then watch it execute, reboot, reconnect and
 // verify.
-import { listGlobalProfiles, listLocalProfiles, upsertGlobalProfile, deleteGlobalProfile, touch } from "../profiles.js";
+import { listGlobalProfiles, listLocalProfiles } from "../profiles.js";
 import { buildWritePlan } from "../writer.js";
-import { escapeHtml, getPath } from "../util.js";
+import { escapeHtml } from "../util.js";
 import { formatValue } from "./fields.js";
 import { connectionLabel } from "../conn.js";
 
@@ -32,9 +32,7 @@ export function render(state) {
         ${localProfiles.map((p) => `<option value="${p.id}" ${state.ui.writeLocalId === p.id ? "selected" : ""}>${escapeHtml(p.label)}</option>`).join("")}
       </select>
     </label>
-    <label class="row inline"><input type="checkbox" data-action="toggle-write-reset-first" ${state.ui.writeResetFirst ? "checked" : ""} />
-      Factory reset first</label>
-    <button type="button" data-action="build-write-plan">${state.ui.writeResetFirst ? "Factory reset & build plan…" : "Build plan"}</button>
+    <button type="button" data-action="build-write-plan">Build plan</button>
   </div>`;
 
   if (state.ui.busy) {
@@ -52,7 +50,6 @@ export function render(state) {
     <h2>Write</h2>
     ${renderDangerZone(state)}
     ${picker}
-    ${renderGlobalProfileSummary(globalProfile)}
     ${plan ? renderPlan(plan, globalProfile, localProfile) : ""}
     ${state.ui.writeLog.length ? `<div class="write-log"><h3>Log</h3>${state.ui.writeLog.map((l) => `<div>${escapeHtml(l)}</div>`).join("")}</div>` : ""}
     ${state.ui.writeVerify ? renderVerify(state.ui.writeVerify) : ""}
@@ -66,27 +63,6 @@ function renderDangerZone(state) {
     <button type="button" data-action="enter-dfu-mode">Enter DFU mode…</button>
     ${isSerial ? `<button type="button" data-action="force-usb-dfu-touch">Force DFU via USB (1200bps reset)…</button>` : ""}
     <button type="button" class="danger" data-action="factory-reset">Factory reset ${escapeHtml(name)}…</button>
-  </div>`;
-}
-
-// There's no dedicated Global profile editor -- a profile is built purely
-// by reading a reference device and promoting selected fields (Read tab).
-// This is the only place left to see what's actually in one, rename it,
-// or delete it. Read-only on purpose: the point of removing the manual
-// editor was to stop hand-typing values here.
-function renderGlobalProfileSummary(globalProfile) {
-  if (!globalProfile) return "";
-  const rows = [...globalProfile.managedPaths].sort().map((path) => {
-    const value = getPath(globalProfile.data, path);
-    return `<tr><td>${escapeHtml(path)}</td><td>${escapeHtml(formatValue(value))}</td></tr>`;
-  }).join("");
-  return `<div class="profile-summary">
-    <div class="row-actions">
-      <input type="text" data-action="rename-global-profile" data-id="${globalProfile.id}" value="${escapeHtml(globalProfile.name)}" />
-      <button type="button" class="danger" data-action="delete-global-profile-from-write" data-id="${globalProfile.id}">Delete profile</button>
-    </div>
-    <p class="muted">${globalProfile.managedPaths.length} field(s) managed${globalProfile.managedPaths.length ? ":" : " -- promote some from the Read tab."}</p>
-    ${globalProfile.managedPaths.length ? `<table class="diff-table"><tbody>${rows}</tbody></table>` : ""}
   </div>`;
 }
 
@@ -165,33 +141,12 @@ export function onAction(state, action, target) {
       state.ui.writeLocalId = target.value || null;
       state.ui.writePlan = null;
       return true;
-    case "toggle-write-reset-first":
-      state.ui.writeResetFirst = target.checked;
-      state.ui.writePlan = null;
-      return true;
     case "build-write-plan": {
       const globalProfile = state.ui.writeGlobalId ? state.store.globalProfiles[state.ui.writeGlobalId] : null;
       const localProfile = state.ui.writeLocalId ? state.store.localProfiles[state.ui.writeLocalId] : null;
       if (!globalProfile && !localProfile) {
         state.ui.error = "Pick at least one profile to write.";
         return true;
-      }
-      if (state.ui.writeResetFirst) {
-        const name = connectionLabel(state.connection) ?? "this device";
-        const parts = [
-          globalProfile ? `global profile "${globalProfile.name}"` : null,
-          localProfile ? `local profile "${localProfile.label}"` : null,
-        ].filter(Boolean).join(" + ");
-        const confirmed = confirm(
-          `Factory reset ${name}, then write ${parts}?\n\n` +
-          "This erases ALL configuration, channels, PKI keys, and node data first (same as the standalone " +
-          "Factory reset button) -- cannot be undone. If you haven't already, capture the device's current " +
-          "private key via Read -> Local identity before continuing, or it's gone.\n\nThe device then " +
-          "reboots, MeshFleet reconnects and reads it fresh, and builds a write plan from that reset state -- " +
-          "you'll get a chance to review the plan before anything is actually written.\n\nContinue?",
-        );
-        if (!confirmed) return true;
-        return { asyncAction: "factory-reset-and-build-plan" };
       }
       state.ui.writePlan = buildWritePlan(globalProfile, localProfile, state.liveSnapshot);
       state.ui.writeVerify = null;
@@ -202,24 +157,6 @@ export function onAction(state, action, target) {
       if (!state.ui.writePlan || state.ui.writePlan.isEmpty) return true;
       if (!confirm("Write this plan to the connected device? It will reboot once when done.")) return true;
       return { asyncAction: "execute-write" };
-    }
-    case "rename-global-profile": {
-      const profile = state.store.globalProfiles[target.dataset.id];
-      if (!profile) return true;
-      profile.name = target.value || profile.name;
-      touch(profile);
-      upsertGlobalProfile(state.store, profile);
-      return true;
-    }
-    case "delete-global-profile-from-write": {
-      const id = target.dataset.id;
-      const profile = state.store.globalProfiles[id];
-      if (!profile) return true;
-      if (!confirm(`Delete profile "${profile.name}"? This cannot be undone.`)) return true;
-      deleteGlobalProfile(state.store, id);
-      if (state.ui.writeGlobalId === id) state.ui.writeGlobalId = null;
-      state.ui.writePlan = null;
-      return true;
     }
     case "factory-reset": {
       const name = connectionLabel(state.connection) ?? "this device";
