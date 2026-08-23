@@ -46,7 +46,15 @@ function renderConnectionIndicator(state) {
       <button type="button" data-action="disconnect">Disconnect</button>`;
   }
   if (status === "connecting" || status === "configuring" || status === "reconnecting") {
-    return `<span class="dot busy"></span> ${escapeHtml(state.ui.busyMessage || status)}…`;
+    // Reconnecting after a factory reset/write can legitimately fail (the
+    // device may have re-enumerated as a different USB port, or the old
+    // Bluetooth pairing may be stale -- see tools/windows-unpair-bluetooth.ps1)
+    // and the retry budget can take minutes to exhaust on its own. Cancel
+    // gives up on it immediately and drops back to "Not connected" so a
+    // fresh Connect (with its own device/port picker) is one click away,
+    // instead of waiting it out or reloading the page.
+    return `<span class="dot busy"></span> ${escapeHtml(state.ui.busyMessage || status)}…
+      <button type="button" data-action="cancel-connect">Cancel</button>`;
   }
   return `<span class="dot off"></span> Not connected
     ${bluetoothAvailable() ? `<button type="button" data-action="connect-new">Connect via Bluetooth…</button>` : ""}
@@ -71,6 +79,19 @@ export function onAction(state, action, target) {
       return { asyncAction: "connect-new-serial" };
     case "disconnect":
       return { asyncAction: "disconnect" };
+    case "cancel-connect":
+      // Synchronous, not an asyncAction: bumping actionToken is all that's
+      // needed to make the stuck captureWithRetry() loop notice and bail
+      // out on its own (main.js) -- no need to await it here.
+      state.ui.actionToken = (state.ui.actionToken ?? 0) + 1;
+      state.connection = null;
+      state.liveSnapshot = null;
+      state.connectionStatus = "disconnected";
+      state.ui.busy = false;
+      state.ui.busyMessage = "";
+      state.ui.writePlan = null;
+      state.ui.writeVerify = null;
+      return true;
     default:
       return false;
   }

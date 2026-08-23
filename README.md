@@ -134,6 +134,16 @@ Typical loop, once per fleet-wide setting you care about:
    (firmware-default) state — still stopping to let you review it before
    anything is written, same as a normal write. One click instead of a
    separate factory reset followed by a second write pass.
+
+   Reconnecting after any reboot (a normal write, a factory reset, or
+   this combined flow) can occasionally fail to find the device again —
+   over USB it may have re-enumerated as a different port, or over
+   Bluetooth the pairing may have gone stale (see "First connection to a
+   T1000-E" above). MeshFleet retries for a while on its own, but if
+   it's taking too long, click **Cancel** next to the spinner in the
+   header to give up on it immediately and go straight back to a normal
+   **Connect via Bluetooth…**/**Connect via USB…** — no page reload
+   needed.
 6. **Enter DFU mode / flash firmware** — also at the bottom of the Write
    tab, two buttons put the device into its bootloader for a firmware
    flash: **Enter DFU mode…** sends Meshtastic's own admin command

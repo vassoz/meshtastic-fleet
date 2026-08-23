@@ -28,6 +28,18 @@ const routeModules = {
   data: dataView,
 };
 
+// Thrown by captureWithRetry() when a Cancel click (or a fresh connect
+// attempt starting) bumps state.ui.actionToken out from under it -- see
+// that function and shell.js's "cancel-connect" action. Distinguished
+// from a real failure so runAsyncAction's catch doesn't surface it as an
+// error banner (the user already knows they cancelled it).
+class ConnectCancelledError extends Error {
+  constructor() {
+    super("Connection attempt cancelled");
+    this.cancelled = true;
+  }
+}
+
 const state = {
   store: storage.load(),
   route: "fleet",
@@ -39,6 +51,7 @@ const state = {
     notice: null,
     busy: false,
     busyMessage: "",
+    actionToken: 0, // bumped by "cancel-connect" (shell.js) or a fresh connect attempt (captureWithRetry) to invalidate a stale in-flight one
     selectedLocalId: null,
     revealedSecrets: new Set(),
     readMode: "global",
@@ -118,6 +131,13 @@ appEl.addEventListener("change", (event) => {
 });
 
 async function runAsyncAction(name, target) {
+  // Captured before the handler runs, so the finally block below can tell
+  // whether *this* dispatch is still the most recent one by the time it
+  // completes -- a "cancel-connect" click or a newer connect attempt
+  // bumps state.ui.actionToken, and a late-finishing superseded handler
+  // (e.g. a reconnect loop that was stuck retrying) must not clobber
+  // busy/busyMessage out from under whatever the newer one is doing.
+  const myToken = state.ui.actionToken;
   try {
     switch (name) {
       case "connect-new":
@@ -154,11 +174,15 @@ async function runAsyncAction(name, target) {
         console.warn("Unknown async action", name);
     }
   } catch (err) {
-    console.error(err);
-    state.ui.error = err?.message || String(err);
+    if (!err?.cancelled) {
+      console.error(err);
+      state.ui.error = err?.message || String(err);
+    }
   } finally {
-    state.ui.busy = false;
-    state.ui.busyMessage = "";
+    if (state.ui.actionToken === myToken) {
+      state.ui.busy = false;
+      state.ui.busyMessage = "";
+    }
     renderApp();
   }
 }
@@ -266,9 +290,18 @@ const RECONNECT_SUB_DELAY_MS = 1500;
 // the underlying reconnect call branch on connRef.kind.
 async function captureWithRetry(connRef, { freshConnection } = {}) {
   const isSerial = connRef.kind === "serial";
+  // Snapshot the token that was current when this attempt started. Checked
+  // at every point below that's about to either wait or mutate shared
+  // state -- if a "cancel-connect" click (or a fresh connect attempt
+  // starting) has bumped it since, this attempt has been superseded and
+  // must stop rather than keep retrying in the background or, worse,
+  // overwrite a newer attempt's state with stale results.
+  const myToken = state.ui.actionToken;
+  const stale = () => myToken !== state.ui.actionToken;
   let connection = freshConnection ?? null;
   let lastErr;
   for (let attempt = 1; attempt <= CONFIGURE_MAX_ATTEMPTS; attempt++) {
+    if (stale()) throw new ConnectCancelledError();
     try {
       if (!connection) {
         state.ui.busyMessage = isSerial
@@ -282,14 +315,17 @@ async function captureWithRetry(connRef, { freshConnection } = {}) {
           ? await reconnectSerial(connRef.port, { retries: RECONNECT_SUB_RETRIES, delayMs: RECONNECT_SUB_DELAY_MS })
           : await reconnect(connRef.bleDevice, { retries: RECONNECT_SUB_RETRIES, delayMs: RECONNECT_SUB_DELAY_MS });
       }
+      if (stale()) throw new ConnectCancelledError();
       state.connection = connection;
       watchConnection(connection);
       state.connectionStatus = "configuring";
       state.ui.busyMessage = "Reading device configuration…";
       renderApp();
       const snap = await captureSnapshot(connection.device, { onProgress: onSnapshotProgress, timeoutMs: 20000 });
+      if (stale()) throw new ConnectCancelledError();
       return { connection, snap };
     } catch (err) {
+      if (err?.cancelled) throw err; // propagate immediately -- not a connection failure to retry past
       lastErr = err;
       console.warn(`Connect/configure attempt ${attempt}/${CONFIGURE_MAX_ATTEMPTS} failed`, err);
       connection = null; // discard the broken transport; force a fresh connect next attempt
@@ -300,6 +336,7 @@ async function captureWithRetry(connRef, { freshConnection } = {}) {
             "if this is the first time connecting to this device, watch for a pairing/PIN prompt.";
         renderApp();
         await new Promise((resolve) => setTimeout(resolve, CONFIGURE_RETRY_DELAY_MS));
+        if (stale()) throw new ConnectCancelledError();
       }
     }
   }
