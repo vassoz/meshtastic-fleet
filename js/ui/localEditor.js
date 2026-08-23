@@ -80,6 +80,15 @@ function renderProfile(state, profile) {
       </div>
       <p class="muted">The device always recomputes its own public key from whatever private key it's given, so only the
         private key is ever written. Leave blank to keep the device's existing key untouched.</p>
+      <label class="row">Public key
+        <span class="secret-field">
+          <span class="mono">${profile.security.publicKey ? escapeHtml(profile.security.publicKey) : "not captured yet"}</span>
+          ${profile.security.publicKey ? `<button type="button" data-action="copy-value" data-value="${escapeHtml(profile.security.publicKey)}">copy</button>` : ""}
+        </span>
+      </label>
+      <p class="muted">Not writable -- the device always derives this from its private key. Captured
+        automatically the next time you read this device and save/update its local profile from Read →
+        Local identity.</p>
     </fieldset>
 
     <fieldset>
@@ -151,6 +160,9 @@ export function onAction(state, action, target) {
       else state.ui.revealedSecrets.add(key);
       return true;
     }
+    case "copy-value":
+      navigator.clipboard?.writeText(target.dataset.value).catch(() => {});
+      return true;
     case "toggle-fixed-position": {
       if (!profile) return true;
       profile.fixedPosition = target.checked ? { latitudeI: 0, longitudeI: 0, altitude: null } : null;
