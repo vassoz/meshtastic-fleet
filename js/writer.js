@@ -165,13 +165,25 @@ export function buildWritePlan(globalProfile, localProfile, deviceSnapshot) {
     removeFixedPositionRequested = true;
   }
 
+  // Ringtone: another dedicated narrow admin call (setRingtoneMessage),
+  // not a config-section field -- see snapshot.js's fetchRingtone() for
+  // why reading it needs manual packet handling. Only acted on when the
+  // local profile actually specifies one that differs from what's
+  // currently on the device; blank means "leave the device's existing
+  // ringtone untouched", same convention as owner name/private key.
+  let ringtone = null;
+  if (localProfile?.ringtone && localProfile.ringtone !== (deviceSnapshot?.ringtone ?? "")) {
+    ringtone = localProfile.ringtone;
+  }
+
   const isEmpty = configWrites.length === 0 && moduleConfigWrites.length === 0 &&
-    channelWrites.length === 0 && !ownerJson && !fixedPosition && !removeFixedPositionRequested;
+    channelWrites.length === 0 && !ownerJson && !fixedPosition && !removeFixedPositionRequested && !ringtone;
 
   return {
     ownerJson,
     fixedPosition,
     removeFixedPositionRequested,
+    ringtone,
     channelWrites,
     configWrites,
     moduleConfigWrites,
@@ -189,6 +201,20 @@ async function sendFixedPosition(device, { latitude, longitude, altitude }) {
   const position = create(Protobuf.Mesh.PositionSchema, fields);
   const msg = create(Protobuf.Admin.AdminMessageSchema, {
     payloadVariant: { case: "setFixedPosition", value: position },
+  });
+  return device.sendPacket(
+    toBinary(Protobuf.Admin.AdminMessageSchema, msg),
+    Protobuf.Portnums.PortNum.ADMIN_APP,
+    "self",
+    0,
+    true,
+    false,
+  );
+}
+
+async function sendRingtone(device, ringtone) {
+  const msg = create(Protobuf.Admin.AdminMessageSchema, {
+    payloadVariant: { case: "setRingtoneMessage", value: ringtone },
   });
   return device.sendPacket(
     toBinary(Protobuf.Admin.AdminMessageSchema, msg),
@@ -231,6 +257,10 @@ export async function executeWritePlan(device, plan, { onLog } = {}) {
     log("Writing fixed position");
     await sendFixedPosition(device, plan.fixedPosition);
   }
+  if (plan.ringtone != null) {
+    log("Writing ringtone");
+    await sendRingtone(device, plan.ringtone);
+  }
 
   log("Committing (commitEditSettings) — device will save and reboot");
   await device.commitEditSettings();
@@ -272,6 +302,10 @@ export function verifyWritePlan(plan, postSnapshot) {
   if (plan.removeFixedPositionRequested) {
     const actual = postSnapshot?.config?.position?.fixedPosition ?? false;
     rows.push({ area: "position", sectionKey: "position", fieldPath: "fixedPosition", expected: false, actual, ok: actual === false });
+  }
+  if (plan.ringtone != null) {
+    const actual = postSnapshot?.ringtone ?? null;
+    rows.push({ area: "ringtone", sectionKey: "ringtone", fieldPath: "ringtone", expected: plan.ringtone, actual, ok: actual === plan.ringtone });
   }
   return rows;
 }

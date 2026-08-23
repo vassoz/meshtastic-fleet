@@ -12,9 +12,9 @@ A local, zero-build web app for provisioning a fleet of Meshtastic devices
   tick the fields worth propagating, and that becomes a reusable profile
   to write to the rest of the fleet.
 - **Local profiles** — per-device identity: long/short name, PKI private
-  key, optional fixed position, optional BLE fixed PIN. One per physical
-  unit, edited directly (each device's name/key is inherently unique, so
-  this one *is* a small form).
+  key, optional fixed position, optional BLE fixed PIN, optional ringtone
+  (RTTTL). One per physical unit, edited directly (each device's
+  name/key is inherently unique, so this one *is* a small form).
 
 **Read** pulls a device's live state and diffs it against firmware
 defaults, a saved global profile, or another saved snapshot, so you can
@@ -113,8 +113,11 @@ Typical loop, once per fleet-wide setting you care about:
 3. **Local** — one profile per physical unit: names, private key
    (generate a fresh X25519 key or paste one — e.g. one you just read off
    a device before wiping it), optional fixed position, optional BLE
-   fixed PIN. This is the one thing that's still a hand-edited form,
-   since every device's identity is inherently unique.
+   fixed PIN, optional ringtone (RTTTL, e.g. `a:d=8,o=5,b=180:c,e,g`).
+   This is the one thing that's still a hand-edited form, since every
+   device's identity is inherently unique. The ringtone and public key
+   fields are captured automatically the next time you read the device
+   and save/update its profile from Read → Local identity.
 4. **Fleet** lists your local profiles as device slots — bind the
    currently-connected device to one, see its last-read timestamp, and
    jump to editing it.
@@ -176,9 +179,19 @@ other section) — there is no field-level merge on the device side. So
 
 `writer.js` avoids this by always building the outgoing message as *the
 device's current section (from a fresh read) with only the managed fields
-overlaid on top* — never the managed fields alone. `setOwner` is the one
-exception: the firmware merges that field-by-field
-(`if (*o.long_name) { ...set... }`), so names are sent directly.
+overlaid on top* — never the managed fields alone. `setOwner`,
+`setFixedPosition`/`removeFixedPosition`, and `setRingtoneMessage` are the
+exceptions: none of the three are `Config`/`ModuleConfig` fields at all —
+they're their own narrow AdminMessage RPCs, so they're sent directly with
+no read-modify-write step.
+
+Ringtone specifically also needed a workaround to *read*: its
+`getRingtoneResponse` AdminMessage case isn't wired to an event by the
+vendored `@meshtastic/core` (confirmed by reading its bundled source —
+unrecognized AdminMessage response types are logged and dropped), so
+`snapshot.js`'s `fetchRingtone()` taps the library's raw `onMeshPacket`
+stream and decodes that one case itself, rather than relying on a
+convenience method the library doesn't provide.
 
 ## Security notes
 

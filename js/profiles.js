@@ -34,6 +34,7 @@ export function newLocalProfile(label = "New device") {
     fixedPosition: null, // { latitudeI, longitudeI, altitude? } | null -- latitudeI/longitudeI are degrees * 1e7 (wire format)
     clearFixedPosition: false, // if true and fixedPosition is null, an active write clears any fixed position on the device
     bluetooth: null, // { fixedPin: number } | null
+    ringtone: "", // RTTTL string | "" -- blank means "leave the device's existing ringtone untouched" on write
     boundTo: null, // { nodeNum, bleName, hwModel } | null -- last device this was applied to
   };
 }

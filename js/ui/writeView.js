@@ -94,7 +94,8 @@ function renderPlan(plan, globalProfile, localProfile) {
   if (plan.isEmpty) {
     const globalManages = globalProfile?.managedPaths?.length > 0;
     const localSetsSomething = !!(localProfile?.owner?.longName || localProfile?.owner?.shortName ||
-      localProfile?.security?.privateKey || localProfile?.fixedPosition || localProfile?.bluetooth || localProfile?.clearFixedPosition);
+      localProfile?.security?.privateKey || localProfile?.fixedPosition || localProfile?.bluetooth ||
+      localProfile?.clearFixedPosition || localProfile?.ringtone);
     let reason;
     if (!globalProfile && !localProfile) {
       reason = "no global or local profile is selected above.";
@@ -126,6 +127,8 @@ function renderPlan(plan, globalProfile, localProfile) {
     ${plan.fixedPosition ? `<div class="plan-section"><strong>Fixed position</strong>
       <p>${plan.fixedPosition.latitude}, ${plan.fixedPosition.longitude}${plan.fixedPosition.altitude != null ? ` @ ${plan.fixedPosition.altitude}m` : ""}</p></div>` : ""}
     ${plan.removeFixedPositionRequested ? `<div class="plan-section"><strong>Fixed position</strong><p>will be cleared</p></div>` : ""}
+    ${plan.ringtone != null ? `<div class="plan-section"><strong>Ringtone</strong>
+      <p class="mono">${escapeHtml(plan.ringtone)}</p></div>` : ""}
     ${sectionBlock("Channels", plan.channelWrites, "Channel ")}
     ${sectionBlock("Config", plan.configWrites, "config.")}
     ${sectionBlock("Module config", plan.moduleConfigWrites, "moduleConfig.")}

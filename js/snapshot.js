@@ -10,13 +10,14 @@
 // unredacted, so one captureSnapshot() call is genuinely everything the
 // Read modes need.
 import { Types } from "@meshtastic/core";
-import { toJson } from "@bufbuild/protobuf";
+import { toJson, create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import {
   getConfigSectionSchema,
   getModuleConfigSectionSchema,
   ChannelSchema,
   UserSchema,
   PositionSchema,
+  Protobuf,
 } from "./schema.js";
 
 /**
@@ -40,6 +41,10 @@ export function captureSnapshot(device, { timeoutMs = 30000, onProgress } = {}) 
       // entry (NodeInfo.position) -- lets Read/Write verify fixed-position
       // writes without a separate request.
       position: null,
+      // The buzzer's RTTTL melody string, or null if not fetched. Not part
+      // of ModuleConfig -- see fetchRingtone() below for why it needs its
+      // own request/response handling.
+      ringtone: null,
     };
     const nodeInfos = new Map();
     const unsubs = [];
@@ -76,6 +81,11 @@ export function captureSnapshot(device, { timeoutMs = 30000, onProgress } = {}) 
       } catch (err) {
         console.warn("Could not fetch device metadata (non-fatal)", err);
       }
+      try {
+        await fetchRingtone();
+      } catch (err) {
+        console.warn("Could not fetch device ringtone (non-fatal)", err);
+      }
       resolve(snap);
     }
 
@@ -99,6 +109,51 @@ export function captureSnapshot(device, { timeoutMs = 30000, onProgress } = {}) 
           finish();
         });
         device.getMetadata(snap.nodeNum).catch(finish);
+      });
+    }
+
+    // The ringtone (buzzer melody) isn't ModuleConfig -- it's its own
+    // AdminMessage RPC (getRingtoneRequest / getRingtoneResponse /
+    // setRingtoneMessage), the same category as Owner and FixedPosition.
+    // Unlike those, @meshtastic/core's own FromRadio routing has no case
+    // for "getRingtoneResponse" (confirmed by reading the vendored
+    // bundle's handleDecodedPacket: unrecognized AdminMessage types are
+    // logged as "unhandled" and dropped) -- so there's no dedicated event
+    // to subscribe to. This instead taps the raw onMeshPacket stream
+    // (dispatched for every decoded packet before that internal routing
+    // runs) and decodes ADMIN_APP packets itself, watching specifically
+    // for the getRingtoneResponse case.
+    function fetchRingtone() {
+      return new Promise((res) => {
+        let done = false;
+        const finish = () => {
+          if (done) return;
+          done = true;
+          clearTimeout(to);
+          meshUnsub();
+          res();
+        };
+        const to = setTimeout(finish, 5000);
+        const meshUnsub = device.events.onMeshPacket.subscribe((meshPacket) => {
+          if (meshPacket.payloadVariant.case !== "decoded") return;
+          const dataPacket = meshPacket.payloadVariant.value;
+          if (dataPacket.portnum !== Protobuf.Portnums.PortNum.ADMIN_APP) return;
+          let admin;
+          try {
+            admin = fromBinary(Protobuf.Admin.AdminMessageSchema, dataPacket.payload);
+          } catch {
+            return; // not a decodable AdminMessage; ignore
+          }
+          if (admin.payloadVariant.case !== "getRingtoneResponse") return;
+          snap.ringtone = admin.payloadVariant.value;
+          onProgress?.("ringtone");
+          finish();
+        });
+        const req = create(Protobuf.Admin.AdminMessageSchema, {
+          payloadVariant: { case: "getRingtoneRequest", value: true },
+        });
+        device.sendPacket(toBinary(Protobuf.Admin.AdminMessageSchema, req), Protobuf.Portnums.PortNum.ADMIN_APP, "self")
+          .catch(finish);
       });
     }
 

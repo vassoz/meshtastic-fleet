@@ -171,6 +171,9 @@ function renderLocalRead(state) {
       <dt>Fixed position</dt><dd>${snap.config?.position?.fixedPosition
         ? `${(snap.position?.latitudeI ?? 0) * 1e-7}, ${(snap.position?.longitudeI ?? 0) * 1e-7}${snap.position?.altitude != null ? ` @ ${snap.position.altitude}m` : ""}`
         : "not set"}</dd>
+      <dt>Ringtone</dt><dd class="mono">${snap.ringtone
+        ? `${escapeHtml(snap.ringtone)} <button type="button" data-action="copy-value" data-value="${escapeHtml(snap.ringtone)}">copy</button>`
+        : '<span class="muted">not set</span>'}</dd>
     </dl>
     <div class="row-actions">
       <button type="button" data-action="save-local-from-read" data-mode="new">Save as new local profile</button>
@@ -280,6 +283,7 @@ export function onAction(state, action, target) {
       };
       if (snap.config?.security?.privateKey) profile.security.privateKey = snap.config.security.privateKey;
       profile.security.publicKey = snap.owner?.publicKey ?? snap.config?.security?.publicKey ?? "";
+      profile.ringtone = snap.ringtone ?? "";
       profile.boundTo = { nodeNum: snap.nodeNum, bleName: connectionLabel(state.connection), hwModel: snap.hwModel ?? null };
       touch(profile);
       upsertLocalProfile(state.store, profile);
