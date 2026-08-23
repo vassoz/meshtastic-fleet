@@ -16,7 +16,7 @@ import * as dataView from "./ui/dataView.js";
 import { Types } from "@meshtastic/core";
 import { connectNew, reconnect, connectNewSerial, reconnectSerial, connectionLabel, triggerSerialDfuTouch, disconnect as bleDisconnect } from "./conn.js";
 import { captureSnapshot } from "./snapshot.js";
-import { executeWritePlan, verifyWritePlan } from "./writer.js";
+import { buildWritePlan, executeWritePlan, verifyWritePlan } from "./writer.js";
 import { generatePrivateKeyBase64 } from "./keys.js";
 import { listLocalProfiles, upsertLocalProfile, touch } from "./profiles.js";
 
@@ -49,6 +49,7 @@ const state = {
     promoteTargetId: "new",
     writeGlobalId: null,
     writeLocalId: null,
+    writeResetFirst: false,
     writePlan: null,
     writeVerify: null,
     writeLog: [],
@@ -139,6 +140,9 @@ async function runAsyncAction(name, target) {
         break;
       case "factory-reset":
         await withTerminalConnectionStatus(handleFactoryReset);
+        break;
+      case "factory-reset-and-build-plan":
+        await withTerminalConnectionStatus(handleFactoryResetAndBuildPlan);
         break;
       case "enter-dfu-mode":
         await withTerminalConnectionStatus(handleEnterDfuMode);
@@ -394,6 +398,61 @@ async function handleFactoryReset() {
       "is likely stale (the firmware wiped its own bonding info, but your OS didn't) -- remove/forget it in " +
       "your OS's Bluetooth settings, then reconnect to re-pair from scratch. On Windows, " +
       "tools/windows-unpair-bluetooth.ps1 in this repo does that from the command line.";
+  }
+}
+
+// Combined "factory reset, then write" flow, triggered from the Write
+// tab's "Factory reset first" checkbox. Reuses the same factory-reset +
+// reconnect steps as handleFactoryReset()/handleExecuteWrite(), but
+// instead of leaving the user disconnected (standalone factory reset) or
+// diffing against a pre-reset snapshot (a plain write), it lands on the
+// normal plan-preview screen (state.ui.writePlan) built from the FRESH
+// post-reset (firmware-default) state -- so the existing "review plan ->
+// Write to device" flow (handleExecuteWrite) still owns the actual write,
+// unchanged. Nothing is written until the user reviews that plan and
+// confirms separately.
+async function handleFactoryResetAndBuildPlan() {
+  if (!state.connection) throw new Error("Not connected");
+  const globalProfile = state.ui.writeGlobalId ? state.store.globalProfiles[state.ui.writeGlobalId] : null;
+  const localProfile = state.ui.writeLocalId ? state.store.localProfiles[state.ui.writeLocalId] : null;
+  if (!globalProfile && !localProfile) throw new Error("Pick at least one profile to write.");
+
+  state.ui.busy = true;
+  state.ui.busyMessage = "Factory resetting device…";
+  state.ui.writePlan = null;
+  state.ui.writeVerify = null;
+  state.ui.writeLog = [];
+  renderApp();
+
+  const connRef = state.connection; // held across the disconnect below, to reconnect the same physical device
+  try {
+    await state.connection.device.factoryResetDevice();
+  } finally {
+    await bleDisconnect(state.connection);
+    watchConnection(null);
+    state.connection = null;
+    state.liveSnapshot = null;
+    state.connectionStatus = "disconnected";
+  }
+
+  const rebootWaitMs = state.store.settings.rebootWaitMs ?? 8000;
+  state.connectionStatus = "reconnecting";
+  state.ui.busyMessage = `Waiting ${Math.round(rebootWaitMs / 1000)}s for the factory reset to complete…`;
+  renderApp();
+  await new Promise((resolve) => setTimeout(resolve, rebootWaitMs));
+
+  const { connection, snap } = await captureWithRetry(connRef);
+  state.connection = connection;
+  state.liveSnapshot = snap;
+  state.connectionStatus = "connected";
+  state.ui.writeResetFirst = false; // consumed -- a later "Build plan" click shouldn't reset again
+
+  state.ui.writePlan = buildWritePlan(globalProfile, localProfile, snap);
+
+  const bound = listLocalProfiles(state.store).find((p) => p.boundTo?.nodeNum === snap.nodeNum);
+  if (bound) {
+    bound.boundTo = { nodeNum: snap.nodeNum, bleName: connectionLabel(connection), hwModel: snap.hwModel ?? null };
+    upsertLocalProfile(state.store, bound);
   }
 }
 

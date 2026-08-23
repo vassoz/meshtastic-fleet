@@ -32,7 +32,9 @@ export function render(state) {
         ${localProfiles.map((p) => `<option value="${p.id}" ${state.ui.writeLocalId === p.id ? "selected" : ""}>${escapeHtml(p.label)}</option>`).join("")}
       </select>
     </label>
-    <button type="button" data-action="build-write-plan">Build plan</button>
+    <label class="row inline"><input type="checkbox" data-action="toggle-write-reset-first" ${state.ui.writeResetFirst ? "checked" : ""} />
+      Factory reset first</label>
+    <button type="button" data-action="build-write-plan">${state.ui.writeResetFirst ? "Factory reset & build plan…" : "Build plan"}</button>
   </div>`;
 
   if (state.ui.busy) {
@@ -160,12 +162,33 @@ export function onAction(state, action, target) {
       state.ui.writeLocalId = target.value || null;
       state.ui.writePlan = null;
       return true;
+    case "toggle-write-reset-first":
+      state.ui.writeResetFirst = target.checked;
+      state.ui.writePlan = null;
+      return true;
     case "build-write-plan": {
       const globalProfile = state.ui.writeGlobalId ? state.store.globalProfiles[state.ui.writeGlobalId] : null;
       const localProfile = state.ui.writeLocalId ? state.store.localProfiles[state.ui.writeLocalId] : null;
       if (!globalProfile && !localProfile) {
         state.ui.error = "Pick at least one profile to write.";
         return true;
+      }
+      if (state.ui.writeResetFirst) {
+        const name = connectionLabel(state.connection) ?? "this device";
+        const parts = [
+          globalProfile ? `global profile "${globalProfile.name}"` : null,
+          localProfile ? `local profile "${localProfile.label}"` : null,
+        ].filter(Boolean).join(" + ");
+        const confirmed = confirm(
+          `Factory reset ${name}, then write ${parts}?\n\n` +
+          "This erases ALL configuration, channels, PKI keys, and node data first (same as the standalone " +
+          "Factory reset button) -- cannot be undone. If you haven't already, capture the device's current " +
+          "private key via Read -> Local identity before continuing, or it's gone.\n\nThe device then " +
+          "reboots, MeshFleet reconnects and reads it fresh, and builds a write plan from that reset state -- " +
+          "you'll get a chance to review the plan before anything is actually written.\n\nContinue?",
+        );
+        if (!confirmed) return true;
+        return { asyncAction: "factory-reset-and-build-plan" };
       }
       state.ui.writePlan = buildWritePlan(globalProfile, localProfile, state.liveSnapshot);
       state.ui.writeVerify = null;

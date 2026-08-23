@@ -125,6 +125,13 @@ Typical loop, once per fleet-wide setting you care about:
    which fields verified successfully. The Write tab is also where you
    rename or delete a global profile — there's no separate editor, just a
    read-only list of what it manages.
+
+   For a fresh or reused device, check **Factory reset first** before
+   clicking **Build plan**: it erases the device completely, reboots,
+   reconnects, and *then* builds the plan against that reset
+   (firmware-default) state — still stopping to let you review it before
+   anything is written, same as a normal write. One click instead of a
+   separate factory reset followed by a second write pass.
 6. **Enter DFU mode / flash firmware** — also at the bottom of the Write
    tab, two buttons put the device into its bootloader for a firmware
    flash: **Enter DFU mode…** sends Meshtastic's own admin command
