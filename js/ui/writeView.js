@@ -95,7 +95,7 @@ function renderPlan(plan, globalProfile, localProfile) {
     const globalManages = globalProfile?.managedPaths?.length > 0;
     const localSetsSomething = !!(localProfile?.owner?.longName || localProfile?.owner?.shortName ||
       localProfile?.security?.privateKey || localProfile?.fixedPosition || localProfile?.bluetooth ||
-      localProfile?.clearFixedPosition || localProfile?.ringtone);
+      localProfile?.clearFixedPosition);
     let reason;
     if (!globalProfile && !localProfile) {
       reason = "no global or local profile is selected above.";

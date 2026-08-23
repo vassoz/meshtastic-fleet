@@ -12,6 +12,7 @@ import {
   upsertGlobalProfile,
   upsertLocalProfile,
   promoteRows,
+  managedValue,
   touch,
 } from "../profiles.js";
 import { formatValue } from "./fields.js";
@@ -55,7 +56,12 @@ function baselineTree(state) {
   if (mode === "defaults") return { label: "firmware defaults", tree: zeroBaseline() };
   if (mode === "profile") {
     const p = state.store.globalProfiles[state.ui.readBaselineId];
-    return { label: p ? `profile "${p.name}"` : "(pick a profile)", tree: p ? { config: unflatten(p, "config"), moduleConfig: unflatten(p, "moduleConfig") } : { config: {}, moduleConfig: {} } };
+    return {
+      label: p ? `profile "${p.name}"` : "(pick a profile)",
+      tree: p
+        ? { config: unflatten(p, "config"), moduleConfig: unflatten(p, "moduleConfig"), ringtone: managedValue(p, "ringtone") }
+        : { config: {}, moduleConfig: {} },
+    };
   }
   if (mode === "snapshot") {
     const snap = state.store.snapshots[state.ui.readBaselineId];
@@ -72,7 +78,18 @@ function unflatten(profile, area) {
   return profile.data[area] ?? {};
 }
 
-function renderGlobalDiff(state) {
+// Shared by the diff table (renderGlobalDiff), "select all", and "promote
+// selected" -- all three need the exact same row set, previously computed
+// three separate times (a pre-existing duplication this just also extends
+// to cover ringtone rather than adding a fourth copy).
+//
+// Ringtone gets a synthetic row here rather than flowing through
+// diffConfigTrees: it isn't a Config/ModuleConfig field (see snapshot.js's
+// fetchRingtone()), so it can't appear in either tree diffConfigTrees
+// walks. `managedPath: "ringtone"` tells promoteRows() to store it at that
+// bare path instead of the usual `${area}.${sectionKey}.${fieldPath}`
+// nesting -- ringtone isn't part of a section, so it doesn't need one.
+function computeGlobalDiffRows(state) {
   const { label, tree } = baselineTree(state);
   const snap = state.liveSnapshot;
   const rows = diffConfigTrees(tree, { config: snap.config, moduleConfig: snap.moduleConfig }, {
@@ -82,8 +99,17 @@ function renderGlobalDiff(state) {
         : null,
   });
   const channelRows = diffChannels(tree.channels ?? {}, snap.channels);
-  const allRows = [...rows, ...channelRows];
+  const baselineRingtone = tree.ringtone || undefined;
+  const otherRingtone = snap.ringtone || undefined;
+  const ringtoneRows = baselineRingtone !== otherRingtone ? [{
+    area: "ringtone", sectionKey: "ringtone", fieldPath: "ringtone", managedPath: "ringtone",
+    label: "Ringtone", baselineValue: baselineRingtone, otherValue: otherRingtone,
+  }] : [];
+  return { label, allRows: [...rows, ...channelRows, ...ringtoneRows] };
+}
 
+function renderGlobalDiff(state) {
+  const { label, allRows } = computeGlobalDiffRows(state);
   const globalProfiles = listGlobalProfiles(state.store);
   const snapshots = Object.entries(state.store.snapshots)
     .map(([id, s]) => ({ id, ...s }))
@@ -119,9 +145,12 @@ function renderGlobalDiff(state) {
     const baselineDisplay = row.baselineValue === undefined
       ? (row.note ? `<span class="muted">unset (${escapeHtml(row.note.note)})</span>` : '<span class="muted">unset</span>')
       : escapeHtml(formatValue(row.baselineValue));
+    const sectionLabel = row.area === "channels" ? `${escapeHtml(row.area)} #${row.sectionKey}`
+      : row.area === "ringtone" ? escapeHtml(row.area) // not a section -- "ringtone.ringtone" would be redundant
+      : `${escapeHtml(row.area)}.${escapeHtml(row.sectionKey)}`;
     return `<tr>
       <td><input type="checkbox" data-action="toggle-diff-row" data-key="${escapeHtml(key)}" ${checked ? "checked" : ""} /></td>
-      <td>${escapeHtml(row.area)}${row.area === "channels" ? ` #${row.sectionKey}` : `.${escapeHtml(row.sectionKey)}`}</td>
+      <td>${sectionLabel}</td>
       <td>${escapeHtml(row.label)}</td>
       <td>${baselineDisplay}</td>
       <td>${escapeHtml(formatValue(row.otherValue))}</td>
@@ -171,9 +200,6 @@ function renderLocalRead(state) {
       <dt>Fixed position</dt><dd>${snap.config?.position?.fixedPosition
         ? `${(snap.position?.latitudeI ?? 0) * 1e-7}, ${(snap.position?.longitudeI ?? 0) * 1e-7}${snap.position?.altitude != null ? ` @ ${snap.position.altitude}m` : ""}`
         : "not set"}</dd>
-      <dt>Ringtone</dt><dd class="mono">${snap.ringtone
-        ? `${escapeHtml(snap.ringtone)} <button type="button" data-action="copy-value" data-value="${escapeHtml(snap.ringtone)}">copy</button>`
-        : '<span class="muted">not set</span>'}</dd>
     </dl>
     <div class="row-actions">
       <button type="button" data-action="save-local-from-read" data-mode="new">Save as new local profile</button>
@@ -216,11 +242,8 @@ export function onAction(state, action, target) {
       return true;
     }
     case "select-all-diffs": {
-      const snap = state.liveSnapshot;
-      const { tree } = baselineTree(state);
-      const rows = [...diffConfigTrees(tree, { config: snap.config, moduleConfig: snap.moduleConfig }),
-        ...diffChannels(tree.channels ?? {}, snap.channels)];
-      for (const row of rows) state.ui.selectedDiffRows.add(`${row.area}.${row.sectionKey}.${row.fieldPath}`);
+      const { allRows } = computeGlobalDiffRows(state);
+      for (const row of allRows) state.ui.selectedDiffRows.add(`${row.area}.${row.sectionKey}.${row.fieldPath}`);
       return true;
     }
     case "select-none-diffs":
@@ -231,10 +254,8 @@ export function onAction(state, action, target) {
       return true;
     case "promote-selected": {
       const snap = state.liveSnapshot;
-      const { tree } = baselineTree(state);
-      const rows = [...diffConfigTrees(tree, { config: snap.config, moduleConfig: snap.moduleConfig }),
-        ...diffChannels(tree.channels ?? {}, snap.channels)]
-        .filter((row) => state.ui.selectedDiffRows.has(`${row.area}.${row.sectionKey}.${row.fieldPath}`));
+      const { allRows } = computeGlobalDiffRows(state);
+      const rows = allRows.filter((row) => state.ui.selectedDiffRows.has(`${row.area}.${row.sectionKey}.${row.fieldPath}`));
       if (rows.length === 0) return true;
       let target_ = state.ui.promoteTargetId && state.ui.promoteTargetId !== "new"
         ? state.store.globalProfiles[state.ui.promoteTargetId]
@@ -283,7 +304,6 @@ export function onAction(state, action, target) {
       };
       if (snap.config?.security?.privateKey) profile.security.privateKey = snap.config.security.privateKey;
       profile.security.publicKey = snap.owner?.publicKey ?? snap.config?.security?.publicKey ?? "";
-      profile.ringtone = snap.ringtone ?? "";
       profile.boundTo = { nodeNum: snap.nodeNum, bleName: connectionLabel(state.connection), hwModel: snap.hwModel ?? null };
       touch(profile);
       upsertLocalProfile(state.store, profile);

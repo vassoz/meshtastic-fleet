@@ -34,7 +34,6 @@ export function newLocalProfile(label = "New device") {
     fixedPosition: null, // { latitudeI, longitudeI, altitude? } | null -- latitudeI/longitudeI are degrees * 1e7 (wire format)
     clearFixedPosition: false, // if true and fixedPosition is null, an active write clears any fixed position on the device
     bluetooth: null, // { fixedPin: number } | null
-    ringtone: "", // RTTTL string | "" -- blank means "leave the device's existing ringtone untouched" on write
     boundTo: null, // { nodeNum, bleName, hwModel } | null -- last device this was applied to
   };
 }
@@ -90,10 +89,14 @@ export function managedValue(profile, fullPath) {
 
 /** Promote selected diff rows (see diff.js: {area, sectionKey, fieldPath,
  * otherValue}) into a global profile, marking each one managed with the
- * value observed on the device. */
+ * value observed on the device. A row may set `managedPath` to store under
+ * a specific path instead of the default `${area}.${sectionKey}.${fieldPath}`
+ * -- used for fields like ringtone that aren't part of a Config/ModuleConfig
+ * section (see readView.js) and so don't need that section-shaped nesting. */
 export function promoteRows(profile, rows) {
   for (const row of rows) {
-    setManagedField(profile, `${row.area}.${row.sectionKey}.${row.fieldPath}`, row.otherValue);
+    const path = row.managedPath ?? `${row.area}.${row.sectionKey}.${row.fieldPath}`;
+    setManagedField(profile, path, row.otherValue);
   }
 }
 

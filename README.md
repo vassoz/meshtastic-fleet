@@ -5,16 +5,16 @@ A local, zero-build web app for provisioning a fleet of Meshtastic devices
 (Web Serial). It splits configuration into two axes:
 
 - **Global profiles** — fleet-wide policy: channels + PSKs, LoRa region/
-  preset, GPS/position behaviour, telemetry intervals, security policy.
-  Built **only** by reading a reference device and selecting which fields
-  to keep — there's no form to hand-author one. Configure a single device
-  however you like (factory app, physical buttons, whatever), read it,
-  tick the fields worth propagating, and that becomes a reusable profile
-  to write to the rest of the fleet.
+  preset, GPS/position behaviour, telemetry intervals, security policy,
+  ringtone (RTTTL). Built **only** by reading a reference device and
+  selecting which fields to keep — there's no form to hand-author one.
+  Configure a single device however you like (factory app, physical
+  buttons, whatever), read it, tick the fields worth propagating, and
+  that becomes a reusable profile to write to the rest of the fleet.
 - **Local profiles** — per-device identity: long/short name, PKI private
-  key, optional fixed position, optional BLE fixed PIN, optional ringtone
-  (RTTTL). One per physical unit, edited directly (each device's
-  name/key is inherently unique, so this one *is* a small form).
+  key, optional fixed position, optional BLE fixed PIN. One per physical
+  unit, edited directly (each device's name/key is inherently unique, so
+  this one *is* a small form).
 
 **Read** pulls a device's live state and diffs it against firmware
 defaults, a saved global profile, or another saved snapshot, so you can
@@ -105,18 +105,17 @@ Typical loop, once per fleet-wide setting you care about:
    diff*. It's diffed against firmware defaults (or a saved profile, or
    another saved snapshot — pick from the dropdown) so you see exactly
    what's non-default. Tick the fields worth keeping — channels, LoRa
-   region, GPS intervals, whatever you actually changed — and hit
-   **Promote selected**, into a new or existing profile. Repeat across
-   several read sessions if you're pulling settings together from more
-   than one reference; promoting again reuses the same profile instead of
-   spawning a new one.
+   region, GPS intervals, ringtone, whatever you actually changed — and
+   hit **Promote selected**, into a new or existing profile. Repeat
+   across several read sessions if you're pulling settings together from
+   more than one reference; promoting again reuses the same profile
+   instead of spawning a new one.
 3. **Local** — one profile per physical unit: names, private key
    (generate a fresh X25519 key or paste one — e.g. one you just read off
    a device before wiping it), optional fixed position, optional BLE
-   fixed PIN, optional ringtone (RTTTL, e.g. `a:d=8,o=5,b=180:c,e,g`).
-   This is the one thing that's still a hand-edited form, since every
-   device's identity is inherently unique. The ringtone and public key
-   fields are captured automatically the next time you read the device
+   fixed PIN. This is the one thing that's still a hand-edited form,
+   since every device's identity is inherently unique. The public key
+   field is captured automatically the next time you read the device
    and save/update its profile from Read → Local identity.
 4. **Fleet** lists your local profiles as device slots — bind the
    currently-connected device to one, see its last-read timestamp, and

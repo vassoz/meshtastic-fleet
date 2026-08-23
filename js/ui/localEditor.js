@@ -122,17 +122,6 @@ function renderProfile(state, profile) {
         <p class="muted">Also set the global profile's Bluetooth mode to Fixed PIN, or this value won't be used.</p>` : ""}
     </fieldset>
 
-    <fieldset>
-      <legend>Ringtone <span class="muted">(RTTTL format, optional)</span></legend>
-      <label class="row">Ringtone
-        <input type="text" data-action="local-field" data-field="ringtone"
-          value="${escapeHtml(profile.ringtone ?? "")}" placeholder="e.g. a:d=8,o=5,b=180:c,e,g" />
-      </label>
-      <p class="muted">The buzzer melody played on alerts, in RTTTL text format. Captured automatically the
-        next time you read this device and save/update its local profile from Read → Local identity, or
-        paste/edit one directly. Leave blank to keep the device's existing ringtone untouched.</p>
-    </fieldset>
-
     <div class="row-actions danger-zone">
       <button type="button" class="danger" data-action="delete-local-profile" data-id="${profile.id}">Delete this profile</button>
     </div>
@@ -231,9 +220,6 @@ function setLocalField(profile, field, target) {
     case "bluetooth.fixedPin":
       profile.bluetooth ??= { fixedPin: 0 };
       profile.bluetooth.fixedPin = Math.max(0, Math.min(999999, Number(value) || 0));
-      break;
-    case "ringtone":
-      profile.ringtone = value;
       break;
   }
 }

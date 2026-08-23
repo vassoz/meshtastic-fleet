@@ -41,5 +41,8 @@ export function zeroBaseline() {
   for (const section of getModuleConfigSections()) {
     moduleConfig[section.key] = toJson(section.schema, zeroValue(section.schema));
   }
-  return { config, moduleConfig };
+  // Ringtone isn't a Config/ModuleConfig section (see snapshot.js's
+  // fetchRingtone()), so there's no schema to reflect a zero-value from --
+  // hardcoded to "", the proto3 default for a string field.
+  return { config, moduleConfig, ringtone: "" };
 }

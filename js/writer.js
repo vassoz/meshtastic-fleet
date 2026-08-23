@@ -167,13 +167,16 @@ export function buildWritePlan(globalProfile, localProfile, deviceSnapshot) {
 
   // Ringtone: another dedicated narrow admin call (setRingtoneMessage),
   // not a config-section field -- see snapshot.js's fetchRingtone() for
-  // why reading it needs manual packet handling. Only acted on when the
-  // local profile actually specifies one that differs from what's
-  // currently on the device; blank means "leave the device's existing
-  // ringtone untouched", same convention as owner name/private key.
+  // why reading it needs manual packet handling. Fleet-wide, not
+  // per-device, so it lives on the global profile (promoted from Read's
+  // diff view, managedPath "ringtone" -- see readView.js), not the local
+  // one. Only acted on when it differs from what's currently on the device.
   let ringtone = null;
-  if (localProfile?.ringtone && localProfile.ringtone !== (deviceSnapshot?.ringtone ?? "")) {
-    ringtone = localProfile.ringtone;
+  if (globalProfile?.managedPaths?.includes("ringtone")) {
+    const value = globalProfile.data?.ringtone;
+    if (value && value !== (deviceSnapshot?.ringtone ?? "")) {
+      ringtone = value;
+    }
   }
 
   const isEmpty = configWrites.length === 0 && moduleConfigWrites.length === 0 &&
