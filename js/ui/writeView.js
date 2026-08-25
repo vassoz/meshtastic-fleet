@@ -39,7 +39,7 @@ export function render(state) {
     return `<section class="view write-view">
       <h2>Write</h2>
       ${picker}
-      <div class="write-log">${state.ui.writeLog.map((l) => `<div>${escapeHtml(l)}</div>`).join("")}</div>
+      <div class="write-log">${renderWriteLog(state.ui.writeLog)}</div>
     </section>`;
   }
 
@@ -51,9 +51,20 @@ export function render(state) {
     ${renderDangerZone(state)}
     ${picker}
     ${plan ? renderPlan(plan, globalProfile, localProfile) : ""}
-    ${state.ui.writeLog.length ? `<div class="write-log"><h3>Log</h3>${state.ui.writeLog.map((l) => `<div>${escapeHtml(l)}</div>`).join("")}</div>` : ""}
+    ${state.ui.writeLog.length ? `<div class="write-log"><h3>Log</h3>${renderWriteLog(state.ui.writeLog)}</div>` : ""}
     ${state.ui.writeVerify ? renderVerify(state.ui.writeVerify) : ""}
   </section>`;
+}
+
+// ABORTED/UNCERTAIN lines (see main.js's handleExecuteWrite -- logged when
+// executeWritePlan() throws a WriteAbortedError) get a distinct style so a
+// silently-failed transaction can't be mistaken for a normal step in the
+// log, even after the dismissible error banner above is gone.
+function renderWriteLog(lines) {
+  return lines.map((l) => {
+    const warn = /^(ABORTED|UNCERTAIN):/.test(l);
+    return `<div class="${warn ? "write-log-warn" : ""}">${escapeHtml(l)}</div>`;
+  }).join("");
 }
 
 function renderDangerZone(state) {

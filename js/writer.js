@@ -260,44 +260,94 @@ async function sendRingtone(device, ringtone) {
   );
 }
 
+/** Thrown by executeWritePlan() when the begin/commit transaction is
+ * aborted partway through -- e.g. an admin packet's acknowledgment never
+ * arrives (device.setOwner()/setConfig()/etc all wait for a genuine ack
+ * from the device, with a real timeout, confirmed in the vendored
+ * Queue class). commitEditSettings() is always the *last* call, so any
+ * failure before it means the device's flash-persisted config was never
+ * touched -- it silently keeps its old settings, which otherwise looks
+ * identical to "the write succeeded" unless this is surfaced clearly.
+ *
+ * `committed` distinguishes two cases the UI should word differently:
+ * - `false`: a step *before* commitEditSettings() failed -- commit was
+ *   never even attempted, so nothing was saved, for certain.
+ * - `null`: commitEditSettings() itself failed to acknowledge. This one's
+ *   ambiguous rather than a clear "it didn't save": the device reboots
+ *   immediately on a successful commit, so a missing ack here could mean
+ *   either the commit failed, or it succeeded and the device rebooted
+ *   before the ack made it back over the link (which is how a *normal*
+ *   write already looks moment-to-moment -- this class only exists for
+ *   when that ack doesn't arrive at all, forcing a timeout). */
+export class WriteAbortedError extends Error {
+  constructor(step, committed, cause) {
+    const detail = committed === false
+      ? "nothing was saved -- the device still has its previous settings"
+      : "it's unclear whether this saved -- the device may have rebooted before confirming";
+    super(`Write aborted while ${step} (${detail}): ${cause?.message ?? cause}`);
+    this.name = "WriteAbortedError";
+    this.committed = committed;
+    this.cause = cause;
+  }
+}
+
 /** Executes a write plan as one begin/commit transaction. `onLog(message)`
- * is called before each step for progress display. */
+ * is called before each step for progress display. Throws
+ * WriteAbortedError (not a bare Error) if the transaction doesn't reach
+ * commit, so callers can tell "nothing was saved" apart from other kinds
+ * of failure. */
 export async function executeWritePlan(device, plan, { onLog } = {}) {
   const log = (msg) => onLog?.(msg);
 
   log("Opening edit transaction (beginEditSettings)");
   await device.beginEditSettings();
 
-  if (plan.ownerJson) {
-    log("Writing owner (name)");
-    await device.setOwner(fromJson(UserSchema, plan.ownerJson));
-  }
-  for (const ch of plan.channelWrites) {
-    log(`Writing channel ${ch.index}`);
-    await device.setChannel(ch.msg);
-  }
-  for (const c of plan.configWrites) {
-    log(`Writing config.${c.key}`);
-    await device.setConfig(c.msg);
-  }
-  for (const mc of plan.moduleConfigWrites) {
-    log(`Writing moduleConfig.${mc.key}`);
-    await device.setModuleConfig(mc.msg);
-  }
-  if (plan.removeFixedPositionRequested) {
-    log("Removing fixed position");
-    await device.removeFixedPosition();
-  } else if (plan.fixedPosition) {
-    log("Writing fixed position");
-    await sendFixedPosition(device, plan.fixedPosition);
-  }
-  if (plan.ringtone != null) {
-    log("Writing ringtone");
-    await sendRingtone(device, plan.ringtone);
+  let step = "the transaction";
+  try {
+    if (plan.ownerJson) {
+      step = "writing owner (name)";
+      log("Writing owner (name)");
+      await device.setOwner(fromJson(UserSchema, plan.ownerJson));
+    }
+    for (const ch of plan.channelWrites) {
+      step = `writing channel ${ch.index}`;
+      log(`Writing channel ${ch.index}`);
+      await device.setChannel(ch.msg);
+    }
+    for (const c of plan.configWrites) {
+      step = `writing config.${c.key}`;
+      log(`Writing config.${c.key}`);
+      await device.setConfig(c.msg);
+    }
+    for (const mc of plan.moduleConfigWrites) {
+      step = `writing moduleConfig.${mc.key}`;
+      log(`Writing moduleConfig.${mc.key}`);
+      await device.setModuleConfig(mc.msg);
+    }
+    if (plan.removeFixedPositionRequested) {
+      step = "removing fixed position";
+      log("Removing fixed position");
+      await device.removeFixedPosition();
+    } else if (plan.fixedPosition) {
+      step = "writing fixed position";
+      log("Writing fixed position");
+      await sendFixedPosition(device, plan.fixedPosition);
+    }
+    if (plan.ringtone != null) {
+      step = "writing ringtone";
+      log("Writing ringtone");
+      await sendRingtone(device, plan.ringtone);
+    }
+  } catch (err) {
+    throw new WriteAbortedError(step, false, err);
   }
 
   log("Committing (commitEditSettings) — device will save and reboot");
-  await device.commitEditSettings();
+  try {
+    await device.commitEditSettings();
+  } catch (err) {
+    throw new WriteAbortedError("committing", null, err);
+  }
 }
 
 /** Compare a post-write snapshot against the plan's intended values.

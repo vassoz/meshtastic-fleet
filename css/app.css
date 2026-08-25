@@ -156,6 +156,7 @@ legend { padding: 0 0.4rem; font-weight: 600; }
   font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 0.85rem;
   background: var(--bg-alt); border-radius: 8px; padding: 0.75rem; max-height: 260px; overflow-y: auto;
 }
+.write-log-warn { color: var(--danger); font-weight: 600; }
 
 /* ---------- misc ---------- */
 .mono { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 0.85rem; word-break: break-all; }

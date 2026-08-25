@@ -16,7 +16,7 @@ import * as dataView from "./ui/dataView.js";
 import { Types } from "@meshtastic/core";
 import { connectNew, reconnect, connectNewSerial, reconnectSerial, connectionLabel, triggerSerialDfuTouch, disconnect as bleDisconnect } from "./conn.js";
 import { captureSnapshot } from "./snapshot.js";
-import { executeWritePlan, verifyWritePlan } from "./writer.js";
+import { executeWritePlan, verifyWritePlan, WriteAbortedError } from "./writer.js";
 import { generatePrivateKeyBase64 } from "./keys.js";
 import { listLocalProfiles, upsertLocalProfile, touch } from "./profiles.js";
 
@@ -530,7 +530,20 @@ async function handleExecuteWrite() {
     renderApp();
   };
 
-  await executeWritePlan(state.connection.device, plan, { onLog: log });
+  try {
+    await executeWritePlan(state.connection.device, plan, { onLog: log });
+  } catch (err) {
+    if (err instanceof WriteAbortedError) {
+      // A dropped/timed-out ack partway through a transaction is easy to
+      // miss as just "an error happened" -- the write log persists on the
+      // Write tab after this (unlike the dismissible error banner), so
+      // record it there too, worded distinctly from a normal step log.
+      log(err.committed === false
+        ? `ABORTED: ${err.message}`
+        : `UNCERTAIN: ${err.message} -- reconnect and re-read to check.`);
+    }
+    throw err;
+  }
   log("Write committed — device is saving and rebooting.");
 
   const rebootWaitMs = state.store.settings.rebootWaitMs ?? 8000;
