@@ -63,6 +63,9 @@ function renderProfile(state, profile) {
       </label>
       <label class="row"><input type="checkbox" data-action="local-field" data-field="owner.isLicensed"
         ${profile.owner.isLicensed ? "checked" : ""} /> Licensed (ham) operator</label>
+      <p class="muted">Meshtastic firmware skips PKI key regeneration entirely for licensed operators -- if this
+        is checked, a private key set below won't get a matching public key recomputed on write (see PKI private
+        key below).</p>
     </fieldset>
 
     <fieldset>
@@ -78,8 +81,11 @@ function renderProfile(state, profile) {
         <button type="button" data-action="generate-keypair" data-id="${profile.id}">Generate new key</button>
         <span class="muted">or paste an existing one above (e.g. captured from the device in Read mode)</span>
       </div>
-      <p class="muted">The device always recomputes its own public key from whatever private key it's given, so only the
-        private key is ever written. Leave blank to keep the device's existing key untouched.</p>
+      <p class="muted">On write, the device recomputes its own public key from whatever private key it's given --
+        but only if its LoRa region is already set and this profile's owner isn't marked Licensed above; otherwise
+        it silently keeps its old public key alongside the new private key, a broken mismatched pair (confirmed
+        against AdminModule.cpp). The Write tab's post-write verification checks for this and flags it if it
+        happens. Leave the private key blank to keep the device's existing key untouched.</p>
       <label class="row">Public key
         <span class="secret-field">
           <span class="mono">${profile.security.publicKey ? escapeHtml(profile.security.publicKey) : "not captured yet"}</span>

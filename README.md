@@ -203,7 +203,15 @@ convenience method the library doesn't provide.
   devtools can read them. Exported backup files are the same — handle
   them like a password backup.
 - The app never writes a device's derived public key — only the private
-  key. The firmware always recomputes the matching public key on write.
+  key. The firmware recomputes the matching public key on write, but
+  only if its LoRa region is already set and the local profile's owner
+  isn't marked Licensed (confirmed against `AdminModule.cpp`) — otherwise
+  it silently keeps its old public key paired with the new private key, a
+  broken mismatched pair. `writer.js` orders config-section writes so
+  LoRa always goes before security, to satisfy the region half of that
+  condition whenever both are written together (e.g. right after a
+  factory reset); the Write tab's post-write verification checks the
+  public key actually changed and flags it if it didn't.
 
 ## Project layout
 

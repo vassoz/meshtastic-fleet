@@ -24,6 +24,7 @@ import {
   UserSchema,
   getConfigSectionSchema,
   getModuleConfigSectionSchema,
+  getConfigSections,
 } from "./schema.js";
 import { managedBySection } from "./profiles.js";
 import { getPath, setPath, deepClone, overlayPaths, stripUndefinedDeep } from "./util.js";
@@ -105,6 +106,35 @@ export function buildWritePlan(globalProfile, localProfile, deviceSnapshot) {
     if (area === "config") configWrites.push({ key: sectionKey, msg, preview });
     else moduleConfigWrites.push({ key: sectionKey, msg, preview });
   }
+
+  // Firmware only regenerates config.security's public key to match a
+  // newly-written private key if the LoRa region is already set *in its
+  // live in-memory config* at the moment it processes the security
+  // section (confirmed by reading AdminModule.cpp's
+  // `case meshtastic_Config_security_tag`: the regen is gated on
+  // `config.lora.region != UNSET`, checked against whatever `config.lora`
+  // currently holds -- which reflects an earlier setConfig() call in this
+  // *same* transaction, since each one mutates the live struct
+  // immediately, well before the deferred flash-save on commit). If lora
+  // and security are both being written (e.g. right after a factory
+  // reset, where region resets to UNSET) and security happened to be
+  // processed first, the device would silently keep its OLD public key
+  // paired with the NEW private key -- a broken keypair. Sorting by
+  // schema-declared order (device/position/power/network/display/
+  // lora/bluetooth/security) guarantees lora always goes first.
+  const configSectionOrder = getConfigSections().map((s) => s.key);
+  configWrites.sort((a, b) => configSectionOrder.indexOf(a.key) - configSectionOrder.indexOf(b.key));
+
+  // The regen is *also* unconditionally skipped firmware-side if the local
+  // profile's owner is marked "Licensed" (ham) -- see setLocalField's
+  // isLicensed handling in localEditor.js. Track whether this write is
+  // expected to change the public key at all, and what it's changing
+  // *from*, so verifyWritePlan() can catch a firmware-side no-op (stale
+  // region, or a licensed owner) instead of silently leaving a mismatched
+  // keypair with no indication anything went wrong.
+  const securityWrite = configWrites.find((w) => w.key === "security");
+  const privateKeyChanging = securityWrite?.preview?.some((p) => p.fieldPath === "privateKey") ?? false;
+  const publicKeyBeforeWrite = privateKeyChanging ? (deviceSnapshot?.config?.security?.publicKey ?? "") : null;
 
   // Channels: same overlay approach, but the outgoing Channel message
   // needs its `index` set explicitly (Channels::setChannel keys off it).
@@ -191,6 +221,7 @@ export function buildWritePlan(globalProfile, localProfile, deviceSnapshot) {
     configWrites,
     moduleConfigWrites,
     needsRepairWarning,
+    publicKeyBeforeWrite,
     isEmpty,
   };
 }
@@ -309,6 +340,27 @@ export function verifyWritePlan(plan, postSnapshot) {
   if (plan.ringtone != null) {
     const actual = postSnapshot?.ringtone ?? null;
     rows.push({ area: "ringtone", sectionKey: "ringtone", fieldPath: "ringtone", expected: plan.ringtone, actual, ok: actual === plan.ringtone });
+  }
+  // Firmware only regenerates the public key to match a newly-written
+  // private key if the region was already set *and* the owner isn't
+  // marked Licensed at the moment it processed the security section (see
+  // buildWritePlan()'s comment) -- neither of which this app can force
+  // firmware to satisfy, only arrange the odds in favor of (section write
+  // order) or warn about (this check). A public key that's identical to
+  // what it was before means the device kept the OLD key paired with the
+  // NEW private key: a silently broken, mismatched keypair otherwise
+  // invisible in the rest of this verification (nothing else compares
+  // publicKey, since this app never sends it).
+  if (plan.publicKeyBeforeWrite != null) {
+    const actual = postSnapshot?.config?.security?.publicKey ?? postSnapshot?.owner?.publicKey ?? "";
+    const ok = !!actual && actual !== plan.publicKeyBeforeWrite;
+    rows.push({
+      area: "security", sectionKey: "security", fieldPath: "publicKey (recomputed by firmware)",
+      expected: "a new public key, different from before the write",
+      actual: ok ? actual : "unchanged -- device kept the OLD public key paired with the new private key " +
+        "(firmware only recomputes it if the LoRa region is already set and the owner isn't marked Licensed)",
+      ok,
+    });
   }
   return rows;
 }
