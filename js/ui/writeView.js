@@ -68,7 +68,7 @@ function renderWriteLog(lines) {
 }
 
 function renderDangerZone(state) {
-  const name = connectionLabel(state.connection) ?? "this device";
+  const name = connectionLabel(state.connection, state.liveSnapshot) ?? "this device";
   const isSerial = state.connection?.kind === "serial";
   return `<div class="row-actions danger-zone danger-zone-top">
     <button type="button" data-action="enter-dfu-mode">Enter DFU mode…</button>
@@ -170,7 +170,7 @@ export function onAction(state, action, target) {
       return { asyncAction: "execute-write" };
     }
     case "factory-reset": {
-      const name = connectionLabel(state.connection) ?? "this device";
+      const name = connectionLabel(state.connection, state.liveSnapshot) ?? "this device";
       const confirmed = confirm(
         `Factory reset ${name}?\n\n` +
         "This erases ALL configuration, channels, PKI keys, and node data, and cannot be undone -- the device " +
@@ -182,7 +182,7 @@ export function onAction(state, action, target) {
       return { asyncAction: "factory-reset" };
     }
     case "enter-dfu-mode": {
-      const name = connectionLabel(state.connection) ?? "this device";
+      const name = connectionLabel(state.connection, state.liveSnapshot) ?? "this device";
       const confirmed = confirm(
         `Put ${name} into DFU (bootloader) mode?\n\n` +
         "This disconnects MeshFleet immediately. Nothing is erased, but the device stops acting as a normal " +

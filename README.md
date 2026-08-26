@@ -36,7 +36,15 @@ nothing leaves your machine.
 - **Chrome or Edge on desktop** for the **USB** connection. Web Serial is
   desktop-Chromium-only — not implemented on Android Chrome, Firefox, or
   Safari. USB also sidesteps Bluetooth pairing entirely, which is
-  particularly handy right after a factory reset (see below).
+  particularly handy right after a factory reset (see below). One
+  wrinkle when provisioning several identical units over USB in one
+  session: every T1000-E reports the exact same USB vendor/product ID,
+  so before a device has been read at least once, the header/fleet
+  labels can't yet tell two different physical units apart (both just
+  show "USB serial (239a:8029)"). Once a device's been read, the label
+  switches to its own name/node number instead, which *is* unique per
+  unit — so read a freshly-connected device before trusting which one
+  you're looking at, especially mid-batch.
 - **Python 3** (only used to vendor dependencies once and to serve static
   files — no Node/npm needed, no build step).
 

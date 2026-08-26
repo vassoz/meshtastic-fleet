@@ -26,11 +26,21 @@ export function serialAvailable() {
 }
 
 /** A short label for the connection indicator / fleet-card "last connection"
- * field. Serial ports have no user-facing name in the Web Serial API (only
- * USB vendor/product IDs via getInfo()), unlike a BLE device's advertised
- * name. */
-export function connectionLabel(connection) {
+ * field / confirm-dialog device name. `snapshot`, if passed, is whatever
+ * live DeviceSnapshot has been captured for this connection so far (may be
+ * null/undefined before the first read completes) -- once available, its
+ * identity is preferred over anything transport-level, because that's the
+ * only thing guaranteed unique per *physical unit*. This matters most for
+ * USB: every T1000-E (and generally, every board sharing the same
+ * USB-serial chip) reports the *identical* vendor/product ID pair via
+ * Web Serial's getInfo() -- unlike Web Bluetooth, there's no per-device
+ * advertised name to fall back on, so two different physical units
+ * connected over USB would otherwise show the exact same label and be
+ * indistinguishable in the UI. */
+export function connectionLabel(connection, snapshot) {
   if (!connection) return null;
+  const identity = snapshot?.owner?.longName || (snapshot?.nodeNum != null ? `Node #${snapshot.nodeNum}` : null);
+  if (identity) return identity;
   if (connection.kind === "serial") {
     const info = connection.port.getInfo?.() ?? {};
     const hex = (n) => (n != null ? n.toString(16).padStart(4, "0") : "????");

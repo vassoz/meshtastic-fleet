@@ -369,7 +369,7 @@ async function handleConnectNewVia(connectFn) {
 
   const bound = listLocalProfiles(state.store).find((p) => p.boundTo?.nodeNum === snap.nodeNum);
   if (bound) {
-    bound.boundTo = { nodeNum: snap.nodeNum, bleName: connectionLabel(connection), hwModel: snap.hwModel ?? null };
+    bound.boundTo = { nodeNum: snap.nodeNum, bleName: connectionLabel(connection, snap), hwModel: snap.hwModel ?? null };
     upsertLocalProfile(state.store, bound);
   }
 }
@@ -565,7 +565,7 @@ async function handleExecuteWrite() {
 
   const bound = listLocalProfiles(state.store).find((p) => p.boundTo?.nodeNum === postSnap.nodeNum);
   if (bound) {
-    const label = connectionLabel(newConnection);
+    const label = connectionLabel(newConnection, postSnap);
     state.store.snapshots[bound.id] = { ...postSnap, label: label ?? bound.label };
     bound.boundTo = { nodeNum: postSnap.nodeNum, bleName: label, hwModel: postSnap.hwModel ?? null };
     upsertLocalProfile(state.store, bound);

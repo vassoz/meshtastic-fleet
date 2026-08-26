@@ -62,7 +62,7 @@ export function onAction(state, action, target) {
       if (profile && state.liveSnapshot) {
         profile.boundTo = {
           nodeNum: state.liveSnapshot.nodeNum,
-          bleName: connectionLabel(state.connection),
+          bleName: connectionLabel(state.connection, state.liveSnapshot),
           hwModel: state.liveSnapshot.hwModel ?? null,
         };
         upsertLocalProfile(state.store, profile);

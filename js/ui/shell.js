@@ -40,7 +40,7 @@ export function renderHeader(state) {
 function renderConnectionIndicator(state) {
   const status = state.connectionStatus;
   if (status === "connected") {
-    const name = connectionLabel(state.connection) ?? "device";
+    const name = connectionLabel(state.connection, state.liveSnapshot) ?? "device";
     const node = state.liveSnapshot?.nodeNum != null ? ` #${state.liveSnapshot.nodeNum}` : "";
     return `<span class="dot ok"></span> Connected: ${escapeHtml(name)}${node}
       <button type="button" data-action="disconnect">Disconnect</button>`;
